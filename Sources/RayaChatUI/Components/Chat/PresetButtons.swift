@@ -8,7 +8,7 @@ struct PresetButtons: View {
     @Environment(\.rayaTheme) private var theme
 
     var body: some View {
-        FlowLayout(spacing: 8) {
+        WrappingHStack(spacing: 8, alignment: .trailing) {
             ForEach(presets, id: \.self) { text in
                 Button(action: { onPress(text) }) {
                     Text(text)
@@ -25,49 +25,90 @@ struct PresetButtons: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.horizontal, 12)
         .padding(.bottom, 20)
     }
 }
 
-/// Simple flow layout for wrapping content.
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
+/// iOS 15-compatible wrapping HStack using preference keys.
+/// Replaces `Layout` protocol (iOS 16+) for backward compatibility.
+struct WrappingHStack: View {
+    let spacing: CGFloat
+    let alignment: HorizontalAlignment
+    let content: () -> [AnyView]
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let result = arrange(proposal: proposal, subviews: subviews)
-        return result.size
+    @State private var totalHeight: CGFloat = 0
+
+    init<Data: RandomAccessCollection, Content: View>(
+        spacing: CGFloat = 8,
+        alignment: HorizontalAlignment = .leading,
+        @ViewBuilder content: () -> ForEach<Data, Data.Element, Content>
+    ) where Data.Element: Hashable {
+        self.spacing = spacing
+        self.alignment = alignment
+        let forEach = content()
+        self.content = { forEach.data.map { item in AnyView(forEach.content(item)) } }
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let result = arrange(proposal: proposal, subviews: subviews)
-        for (index, position) in result.positions.enumerated() {
-            subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
+    var body: some View {
+        GeometryReader { geo in
+            generateContent(in: geo.size.width)
         }
+        .frame(height: totalHeight)
     }
 
-    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
-        let maxWidth = proposal.width ?? .infinity
-        var positions: [CGPoint] = []
+    private func generateContent(in availableWidth: CGFloat) -> some View {
         var x: CGFloat = 0
         var y: CGFloat = 0
         var rowHeight: CGFloat = 0
-        var totalHeight: CGFloat = 0
+        let items = content()
 
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > maxWidth && x > 0 {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
+        return ZStack(alignment: .topLeading) {
+            // Invisible sizing pass — measures each item
+            Color.clear
+                .frame(height: 0)
+
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                item
+                    .alignmentGuide(.leading) { dim in
+                        if abs(x - dim.width) > availableWidth {
+                            x = 0
+                            y -= rowHeight + spacing
+                            rowHeight = 0
+                        }
+                        rowHeight = max(rowHeight, dim.height)
+                        let result = x
+                        if index == items.count - 1 {
+                            x = 0 // reset
+                        } else {
+                            x -= dim.width + spacing
+                        }
+                        return -result
+                    }
+                    .alignmentGuide(.top) { _ in
+                        let result = y
+                        if index == items.count - 1 {
+                            y = 0 // reset
+                        }
+                        return -result
+                    }
             }
-            positions.append(CGPoint(x: x, y: y))
-            rowHeight = max(rowHeight, size.height)
-            x += size.width + spacing
-            totalHeight = y + rowHeight
         }
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: HeightPrefKey.self, value: geo.size.height)
+            }
+        )
+        .onPreferenceChange(HeightPrefKey.self) { height in
+            totalHeight = height
+        }
+        .frame(maxWidth: .infinity, alignment: alignment == .trailing ? .trailing : .leading)
+    }
+}
 
-        return (CGSize(width: maxWidth, height: totalHeight), positions)
+private struct HeightPrefKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
