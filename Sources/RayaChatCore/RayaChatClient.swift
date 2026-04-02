@@ -1,0 +1,526 @@
+import Foundation
+import Combine
+
+/// Main entry point for the Raya Chat SDK.
+///
+/// Manages the entire chat lifecycle: WebSocket, heartbeat, reconnection, message persistence,
+/// and all user actions. All state is published via `@Published` for reactive UI binding.
+///
+/// **Packaged UI** (Modes 1-3): Used internally by `RayaChatViewModel`.
+/// **Headless** (Mode 4): Used directly by the host app.
+public final class RayaChatClient: ObservableObject {
+
+    // MARK: - Configuration
+
+    public let config: RayaChatConfig
+
+    // MARK: - Internal Components
+
+    private let apiClient: APIClient
+    private let keychainStorage = KeychainStorage()
+    private let messageStore: MessageStore
+    private let networkMonitor = NetworkMonitor()
+    private let lifecycleObserver = AppLifecycleObserver()
+    private var wsManager: WebSocketManager?
+    private var messageHandler: MessageHandler?
+    private var sessionId = ""
+    private var currentUserInfo = UserInfo()
+    private var cancellables = Set<AnyCancellable>()
+
+    private let json = JSONEncoder()
+
+    // MARK: - Public State (@Published)
+
+    @Published public var messages: [TypeMessage] = []
+    @Published public var currentMessage: String = ""
+    @Published public var connectionStatus: ConnectionStatus = .disconnected
+    @Published public var isConnected: Bool = false
+    @Published public var isOnline: Bool = true
+    @Published public var loading: Bool = false
+    @Published public var status: String? = nil
+    @Published public var info: String? = nil
+    @Published public var commandData: CommandData? = nil
+    @Published public var presets: [String] = []
+    @Published public var showHumanAgentBtn: Bool = false
+    @Published public var sessionCloseInfo: SessionCloseInfo? = nil
+    @Published public var currentSessionId: String = ""
+
+    // MARK: - Init
+
+    public init(config: RayaChatConfig) {
+        self.config = config
+        self.apiClient = APIClient(token: config.token, locale: config.locale)
+        self.messageStore = MessageStore()
+
+        setupNetworkMonitor()
+        setupLifecycleObserver()
+    }
+
+    /// For testing with custom dependencies.
+    init(config: RayaChatConfig, messageStore: MessageStore) {
+        self.config = config
+        self.apiClient = APIClient(token: config.token, locale: config.locale)
+        self.messageStore = messageStore
+
+        setupNetworkMonitor()
+    }
+
+    // MARK: - Public Actions
+
+    /// Fetches bot configuration from the API.
+    public func fetchBotConfig() async -> BotConfigProps {
+        await apiClient.fetchBotConfig()
+    }
+
+    /// Starts the WebSocket connection.
+    ///
+    /// - Parameter userInfo: User details from the form (or empty for anonymous).
+    /// - Parameter botConfig: Bot configuration — pass this so the initial bot message appears.
+    @MainActor
+    public func connect(userInfo: UserInfo, botConfig: BotConfigProps? = nil) async {
+        do {
+            try await connectInternal(userInfo: userInfo, botConfig: botConfig)
+        } catch {
+            Log.e("Client", "connect() failed: \(error.localizedDescription)")
+            config.onError?("Connection failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Sends a text message.
+    @MainActor
+    public func sendMessage(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let ts = Int(Date().timeIntervalSince1970)
+        let msg = TypeMessage(
+            id: "local-\(ts)-\(randomSuffix())",
+            sender: 1,
+            type: 1,
+            content: trimmed,
+            createdAt: "\(ts)"
+        )
+
+        addMessageToState(msg)
+        presets = []
+
+        let payload = OutboundMessage(content: trimmed, images: [])
+        if let data = try? json.encode(payload), let jsonString = String(data: data, encoding: .utf8) {
+            let sent = wsManager?.send(jsonString) ?? false
+            if !sent {
+                config.onError?("Message queued — reconnecting...")
+            }
+        }
+    }
+
+    /// Sends images with an optional caption.
+    @MainActor
+    public func sendImages(_ images: [ImagePayload], caption: String = "") {
+        let ts = Int(Date().timeIntervalSince1970)
+        presets = []
+
+        // Build local attachments JSON for display
+        let localAttachments = images.enumerated().map { idx, img in
+            Attachment(id: "local-att-\(ts)-\(idx)", url: img.uri.isEmpty ? img.base64 : img.uri, type: "image", name: img.name)
+        }
+        let attachmentsJson = (try? String(data: json.encode(localAttachments), encoding: .utf8)) ?? "[]"
+
+        let msg = TypeMessage(
+            id: "local-img-\(ts)-\(randomSuffix())",
+            sender: 1,
+            type: 3,
+            content: caption,
+            createdAt: "\(ts)",
+            attachmentsJson: attachmentsJson
+        )
+
+        addMessageToState(msg)
+
+        // Heavy JSON serialization on background thread
+        Task.detached { [weak self] in
+            guard let self else { return }
+            let outbound = OutboundMessage(
+                content: caption,
+                images: images.map { OutboundImage(name: $0.name, type: $0.type, data: $0.base64) }
+            )
+            guard let data = try? self.json.encode(outbound),
+                  let jsonString = String(data: data, encoding: .utf8) else { return }
+
+            await MainActor.run {
+                let sent = self.wsManager?.send(jsonString) ?? false
+                if !sent {
+                    self.config.onError?("Message queued — reconnecting...")
+                }
+            }
+        }
+    }
+
+    /// Sends a voice note as base64.
+    @MainActor
+    public func sendAudio(_ base64: String) {
+        let ts = Int(Date().timeIntervalSince1970)
+        let audioData = AudioData(type: "local", audioUrls: base64)
+        let audioJson = (try? String(data: json.encode(audioData), encoding: .utf8)) ?? "{}"
+
+        let msg = TypeMessage(
+            id: "local-audio-\(ts)-\(randomSuffix())",
+            sender: 1,
+            type: 2,
+            content: "",
+            createdAt: "\(ts)",
+            audioJson: audioJson
+        )
+
+        addMessageToState(msg)
+
+        let sent = wsManager?.send(base64) ?? false
+        if !sent {
+            config.onError?("Audio queued — reconnecting...")
+        }
+    }
+
+    /// Sends a preset as a message and clears preset buttons.
+    @MainActor
+    public func sendPreset(_ text: String) {
+        presets = []
+        sendMessage(text)
+    }
+
+    /// Responds to a server command.
+    @MainActor
+    public func sendCommandResponse(command: String, response: Any) {
+        commandData = nil
+
+        let responseString = "\(response)"
+        let cmd = OutboundCommandResponse(command: command, response: responseString)
+        if let data = try? json.encode(cmd), let jsonString = String(data: data, encoding: .utf8) {
+            _ = wsManager?.send(jsonString)
+        }
+    }
+
+    /// Clears the session close info (after auto_close warning).
+    @MainActor
+    public func clearSessionCloseInfo() {
+        sessionCloseInfo = nil
+    }
+
+    /// Ends the current session — clears all storage and state.
+    @MainActor
+    public func endSession() async {
+        wsManager?.destroy()
+        wsManager = nil
+        networkMonitor.stop()
+
+        sessionId = ""
+        currentSessionId = ""
+        currentUserInfo = UserInfo()
+
+        // Clear storage on background
+        await Task.detached { [messageStore = self.messageStore, keychain = self.keychainStorage] in
+            messageStore.deleteAll()
+            keychain.clearAll()
+        }.value
+
+        // Reset all state
+        messages = []
+        currentMessage = ""
+        connectionStatus = .disconnected
+        isConnected = false
+        loading = false
+        status = nil
+        info = nil
+        commandData = nil
+        presets = []
+        showHumanAgentBtn = false
+
+        config.onSessionEnd?()
+        Log.i("Client", "Session ended — all state cleared")
+    }
+
+    /// Releases all resources. Call on Activity/ViewController destroy.
+    public func destroy() {
+        wsManager?.destroy()
+        wsManager = nil
+        networkMonitor.stop()
+        lifecycleObserver.stop()
+        cancellables.removeAll()
+        Log.i("Client", "Client destroyed")
+    }
+
+    // MARK: - Private — Connect
+
+    @MainActor
+    private func connectInternal(userInfo: UserInfo, botConfig: BotConfigProps?) async throws {
+        currentUserInfo = userInfo
+
+        // Restore session ID + messages on background
+        let (restoredId, storedMessages) = await Task.detached { [keychain = self.keychainStorage, store = self.messageStore] () -> (String, [TypeMessage]) in
+            let sid = keychain.getSessionId()
+            let msgs = store.getAll()
+            keychain.setUserInfo(userInfo)
+            return (sid, msgs)
+        }.value
+
+        sessionId = restoredId
+        currentSessionId = restoredId
+        messages = storedMessages
+
+        // Add initial bot message if no stored messages
+        if storedMessages.isEmpty, let botConfig {
+            let initialMsg = botConfig.chatboxInitialMsg ?? ""
+            if !initialMsg.isEmpty {
+                let welcomeMsg = TypeMessage(
+                    id: "initial-\(Int(Date().timeIntervalSince1970))",
+                    sender: 2,
+                    type: 1,
+                    content: initialMsg,
+                    createdAt: "\(Int(Date().timeIntervalSince1970))"
+                )
+                addMessageToState(welcomeMsg)
+            }
+        }
+
+        // Setup WebSocket
+        let handler = MessageHandler()
+        handler.delegate = self
+        messageHandler = handler
+
+        let ws = WebSocketManager()
+        ws.callbacks = self
+        wsManager = ws
+
+        // Observe connection status
+        ws.status
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                self?.connectionStatus = status
+                self?.isConnected = (status == .connected)
+            }
+            .store(in: &cancellables)
+
+        // Connect
+        let url = apiClient.constructWebSocketUrl(sessionId: sessionId, userInfo: userInfo)
+        ws.connect(url: url)
+    }
+
+    // MARK: - Private — Setup
+
+    private func setupNetworkMonitor() {
+        networkMonitor.isOnline
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] online in
+                self?.isOnline = online
+            }
+            .store(in: &cancellables)
+        networkMonitor.start()
+    }
+
+    private func setupLifecycleObserver() {
+        lifecycleObserver.onForeground = { [weak self] duration in
+            guard let self else { return }
+            if duration > Constants.staleStateThreshold {
+                Task { @MainActor in
+                    self.currentMessage = ""
+                    self.loading = false
+                    self.status = nil
+                }
+            }
+            self.wsManager?.setAppActive(true)
+        }
+        lifecycleObserver.onBackground = { [weak self] in
+            self?.wsManager?.setAppActive(false)
+        }
+        lifecycleObserver.start()
+    }
+
+    // MARK: - Private — State Helpers
+
+    @MainActor
+    private func addMessageToState(_ message: TypeMessage) {
+        messages.append(message)
+
+        // Trim in-memory
+        if messages.count > Constants.maxMessagesInMemory {
+            messages = Array(messages.suffix(Constants.maxMessagesInMemory))
+        }
+
+        // Persist on background
+        Task.detached { [store = self.messageStore] in
+            store.insert(message)
+            store.trimToLatest()
+        }
+    }
+
+    private func randomSuffix() -> String {
+        UUID().uuidString.prefix(8).lowercased()
+    }
+}
+
+// MARK: - WebSocketManagerCallbacks
+
+extension RayaChatClient: WebSocketManagerCallbacks {
+    func onMessage(_ text: String) {
+        messageHandler?.handle(text)
+    }
+
+    func onOpen() {
+        Log.i("Client", "WebSocket opened")
+        if !sessionId.isEmpty {
+            config.onSessionStart?(sessionId)
+        }
+    }
+
+    func onClose(code: Int, reason: String) {
+        Log.i("Client", "WebSocket closed: \(code) \(reason)")
+    }
+
+    func onError(_ error: String) {
+        Log.e("Client", "WebSocket error: \(error)")
+        config.onError?(error)
+    }
+}
+
+// MARK: - MessageHandlerDelegate
+
+extension RayaChatClient: MessageHandlerDelegate {
+    func onStep(text: String?) {
+        Task { @MainActor in
+            loading = true
+            status = text
+        }
+    }
+
+    func onChunk(text: String) {
+        Task { @MainActor in
+            currentMessage += text
+            loading = false
+            status = nil
+        }
+    }
+
+    func onResponse(message: TypeMessage, sessionId: String?) {
+        Task { @MainActor in
+            // Finalize streaming message
+            if !currentMessage.isEmpty {
+                let finalMsg = TypeMessage(
+                    id: message.id,
+                    sender: 2,
+                    type: 1,
+                    content: currentMessage,
+                    createdAt: message.createdAt
+                )
+                addMessageToState(finalMsg)
+                currentMessage = ""
+            } else if let content = message.content, !content.isEmpty {
+                addMessageToState(message)
+            }
+
+            loading = false
+            status = nil
+            info = nil
+        }
+    }
+
+    func onPresets(_ newPresets: [String]) {
+        Task { @MainActor in
+            presets = newPresets
+        }
+    }
+
+    func onCommand(data: CommandData) {
+        Task { @MainActor in
+            commandData = data
+            loading = false
+            status = nil
+        }
+    }
+
+    func onError(text: String) {
+        Task { @MainActor in
+            let errorMsg = TypeMessage(
+                id: "error-\(Int(Date().timeIntervalSince1970))-\(randomSuffix())",
+                sender: 2,
+                type: 1,
+                content: text,
+                createdAt: "\(Int(Date().timeIntervalSince1970))"
+            )
+            addMessageToState(errorMsg)
+            loading = false
+            status = nil
+            currentMessage = ""
+        }
+    }
+
+    func onEscalation(showButton: Bool) {
+        Task { @MainActor in
+            showHumanAgentBtn = showButton
+        }
+    }
+
+    func onInfo(text: String?) {
+        Task { @MainActor in
+            info = text
+            loading = text != nil
+        }
+    }
+
+    func onAgentActivity(message: TypeMessage) {
+        Task { @MainActor in
+            addMessageToState(message)
+        }
+    }
+
+    func onServerMessage(message: TypeMessage) {
+        Task { @MainActor in
+            addMessageToState(message)
+        }
+    }
+
+    func onSessionUpdate(sessionId: String) {
+        self.sessionId = sessionId
+        Task { @MainActor in
+            currentSessionId = sessionId
+        }
+
+        // Persist + update URL on background
+        Task.detached { [keychain = self.keychainStorage, apiClient = self.apiClient, userInfo = self.currentUserInfo] in
+            keychain.setSessionId(sessionId)
+            let newUrl = apiClient.constructWebSocketUrl(sessionId: sessionId, userInfo: userInfo)
+            await MainActor.run { [weak self] in
+                self?.wsManager?.updateUrl(newUrl)
+            }
+        }
+
+        Log.i("Client", "Session ID updated: \(sessionId) — WS URL refreshed")
+    }
+
+    func onAttachments(attachments: [String], type: String) {
+        Task.detached { [store = self.messageStore, json = self.json] in
+            guard let lastMsg = store.getLastMessage() else { return }
+
+            if type == "image" && !attachments.isEmpty {
+                let atts = attachments.map { url in
+                    Attachment(id: "", url: url, type: "image", name: "")
+                }
+                if let data = try? json.encode(atts), let jsonStr = String(data: data, encoding: .utf8) {
+                    let updated = TypeMessage(
+                        id: lastMsg.id, sender: lastMsg.sender, type: lastMsg.type,
+                        content: lastMsg.content, createdAt: lastMsg.createdAt,
+                        attachmentsJson: jsonStr, audioJson: lastMsg.audioJson
+                    )
+                    store.insert(updated)
+                }
+            } else if type == "audio" && !attachments.isEmpty {
+                let audioData = AudioData(type: "remote", audioUrls: attachments.first ?? "")
+                if let data = try? json.encode(audioData), let jsonStr = String(data: data, encoding: .utf8) {
+                    let updated = TypeMessage(
+                        id: lastMsg.id, sender: lastMsg.sender, type: lastMsg.type,
+                        content: lastMsg.content, createdAt: lastMsg.createdAt,
+                        attachmentsJson: lastMsg.attachmentsJson, audioJson: jsonStr
+                    )
+                    store.insert(updated)
+                }
+            }
+        }
+    }
+}
