@@ -69,7 +69,7 @@ final class WebSocketManager: @unchecked Sendable {
         // We'll trigger onOpen from the first successful operation.
         // For now, optimistically mark as connected after a brief delay.
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(500))
+            try? await Task.sleep(nanoseconds: 500_000_000)
             guard let self, !self.destroyed, self._status.value == .connecting else { return }
             self.updateStatus(.connected)
             self.reconnectAttempts = 0
@@ -194,7 +194,7 @@ final class WebSocketManager: @unchecked Sendable {
         stopHeartbeat()
         heartbeatTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(Constants.heartbeatInterval))
+                try? await Task.sleep(nanoseconds: UInt64(Constants.heartbeatInterval * 1_000_000_000))
                 guard let self, !self.destroyed, self.isAppActive else { break }
                 self.sendPing()
                 self.startHeartbeatTimeout()
@@ -216,7 +216,7 @@ final class WebSocketManager: @unchecked Sendable {
     private func startHeartbeatTimeout() {
         heartbeatTimeoutTask?.cancel()
         heartbeatTimeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(Constants.heartbeatTimeout))
+            try? await Task.sleep(nanoseconds: UInt64(Constants.heartbeatTimeout * 1_000_000_000))
             guard let self, !self.destroyed, !Task.isCancelled else { return }
             // No pong received — connection is dead
             Log.w("WS", "← Heartbeat timeout — no pong in \(Constants.heartbeatTimeout)s")
@@ -259,7 +259,7 @@ final class WebSocketManager: @unchecked Sendable {
 
         reconnectTask?.cancel()
         reconnectTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard let self, !self.destroyed, !Task.isCancelled else { return }
             self.task?.cancel(with: .normalClosure, reason: nil)
             self.task = nil

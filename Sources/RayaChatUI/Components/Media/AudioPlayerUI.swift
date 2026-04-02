@@ -89,7 +89,7 @@ struct AudioPlayerUI: View {
                             await MainActor.run { isPlaying = false; positionMs = 0 }
                             break
                         }
-                        try? await Task.sleep(for: .milliseconds(200))
+                        try? await Task.sleep(nanoseconds: 200_000_000)
                     }
                 }
             }

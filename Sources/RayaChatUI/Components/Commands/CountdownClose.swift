@@ -47,7 +47,7 @@ struct CountdownClose: View {
         }
         .task(id: message) {
             for _ in 0..<Constants.feedbackCountdownSeconds {
-                try? await Task.sleep(for: .seconds(1))
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
                 if count > 0 { count -= 1 }
             }
             onComplete()

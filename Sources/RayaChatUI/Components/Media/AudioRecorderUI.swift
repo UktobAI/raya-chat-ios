@@ -94,7 +94,7 @@ struct AudioRecorderUI: View {
                 while isRecording && !Task.isCancelled {
                     let amp = await adapter.getAmplitude()
                     await MainActor.run { amplitudes.append(amp) }
-                    try await Task.sleep(for: .milliseconds(100))
+                    try await Task.sleep(nanoseconds: 100_000_000)
                 }
             } catch {
                 onCancel()

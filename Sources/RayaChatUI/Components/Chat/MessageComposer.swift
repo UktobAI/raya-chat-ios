@@ -39,10 +39,10 @@ struct MessageComposer: View {
             // Card
             VStack(spacing: 8) {
                 // Text field
-                TextField(actualPlaceholder, text: $text, axis: .vertical)
+                TextField(actualPlaceholder, text: $text)
                     .font(RayaTypography.input)
                     .foregroundColor(theme.foreground)
-                    .lineLimit(1...6)
+                    .lineLimit(6)
                     .padding(.vertical, 2)
 
                 // Button row
