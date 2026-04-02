@@ -182,7 +182,7 @@ client.destroy()
 
 | Requirement | Version |
 |------------|---------|
-| iOS | 16.0+ |
+| iOS | 15.0+ |
 | macOS | 13.0+ (for SPM build) |
 | Swift | 5.9+ |
 | Xcode | 15.0+ |
