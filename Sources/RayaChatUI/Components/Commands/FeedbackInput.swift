@@ -1,7 +1,7 @@
 import SwiftUI
 import RayaChatCore
 
-/// Textarea + Skip/Submit in a bot bubble for feedback collection.
+/// Textarea + Skip/Submit in a bot bubble — matches Android FeedbackInput.kt.
 struct FeedbackInput: View {
     let message: String
     let optional: Bool
@@ -21,11 +21,11 @@ struct FeedbackInput: View {
                     .padding(.bottom, 8)
             }
 
-            // Text input
+            // Text input — min 100pt height (matches Android heightIn(min = 100.dp))
             TextEditor(text: $feedback)
                 .font(RayaTypography.body)
                 .foregroundColor(theme.foreground)
-                .frame(minHeight: 80, maxHeight: 120)
+                .frame(minHeight: 100)
                 .padding(8)
                 .background(theme.background)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -43,34 +43,43 @@ struct FeedbackInput: View {
                             .allowsHitTesting(false)
                     }
                 }
+                .onChange(of: feedback) { newValue in
+                    // Enforce max length (matches Android MAX_FEEDBACK_LENGTH = 200)
+                    if newValue.count > Constants.maxFeedbackLength {
+                        feedback = String(newValue.prefix(Constants.maxFeedbackLength))
+                    }
+                }
 
-            // Counter + buttons
+            // Counter + buttons row (matches Android Row with SpaceBetween)
             HStack {
-                Text("\(feedback.count)/\(Constants.maxFeedbackLength)")
-                    .font(RayaTypography.tiny)
+                // Counter — "X/200 characters" (matches Android format)
+                Text("\(feedback.count)/\(Constants.maxFeedbackLength) characters")
+                    .font(RayaTypography.caption)
                     .foregroundColor(theme.mutedForeground)
 
                 Spacer()
 
-                if optional {
-                    Button(action: { onSubmit("") }) {
-                        Text(RayaStrings.get("skip", locale: locale))
-                            .font(RayaTypography.buttonSmall)
-                            .foregroundColor(theme.foreground)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .overlay(Capsule().stroke(theme.border, lineWidth: 1))
+                HStack(spacing: 8) {
+                    if optional {
+                        Button(action: { onSubmit("") }) {
+                            Text(RayaStrings.get("skip", locale: locale))
+                                .font(RayaTypography.buttonSmall)
+                                .foregroundColor(theme.foreground)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .overlay(Capsule().stroke(theme.border, lineWidth: 1))
+                        }
                     }
-                }
 
-                Button(action: { onSubmit(feedback.trimmingCharacters(in: .whitespacesAndNewlines)) }) {
-                    Text(RayaStrings.get("submit", locale: locale))
-                        .font(RayaTypography.buttonSmall)
-                        .foregroundColor(theme.gradientForeground)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(theme.gradientColor)
-                        .clipShape(Capsule())
+                    Button(action: { onSubmit(feedback.trimmingCharacters(in: .whitespacesAndNewlines)) }) {
+                        Text(RayaStrings.get("submit", locale: locale))
+                            .font(RayaTypography.buttonSmall)
+                            .foregroundColor(theme.gradientForeground)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(theme.gradientColor)
+                            .clipShape(Capsule())
+                    }
                 }
             }
             .padding(.top, 8)

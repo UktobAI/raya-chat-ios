@@ -1,7 +1,10 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Wrapping pill-shaped suggestion buttons, right-aligned.
-/// Matches Android FlowRow with Arrangement.End.
+/// Pills sit on the same row when they fit, wrap to next row when they don't.
 struct PresetButtons: View {
     let presets: [String]
     let onPress: (String) -> Void
@@ -14,14 +17,13 @@ struct PresetButtons: View {
 
         return AnyView(
             VStack(alignment: .trailing, spacing: 8) {
-                // Measure available width
+                // Measure container width
                 Color.clear.frame(height: 0)
                     .background(GeometryReader { geo in
                         Color.clear.preference(key: WidthKey.self, value: geo.size.width)
                     })
                     .onPreferenceChange(WidthKey.self) { containerWidth = $0 }
 
-                // Render rows
                 if containerWidth > 0 {
                     let rows = calculateRows(presets: presets, maxWidth: containerWidth, spacing: 8)
                     ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
@@ -45,6 +47,7 @@ struct PresetButtons: View {
                 .font(RayaTypography.buttonSmall)
                 .foregroundColor(theme.presetText)
                 .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .overlay(
@@ -55,28 +58,37 @@ struct PresetButtons: View {
         }
     }
 
-    /// Calculate which presets fit on each row (right-aligned wrapping).
+    /// Calculate rows using actual text measurement — not character estimation.
     private func calculateRows(presets: [String], maxWidth: CGFloat, spacing: CGFloat) -> [[String]] {
         var rows: [[String]] = []
         var currentRow: [String] = []
         var currentWidth: CGFloat = 0
 
         for text in presets {
-            // Estimate pill width: ~8pt per character + 24pt horizontal padding + 2pt border
-            let estimatedWidth = CGFloat(text.count) * 8 + 26
+            let pillWidth = measurePillWidth(text)
 
-            if currentWidth + estimatedWidth + (currentRow.isEmpty ? 0 : spacing) > maxWidth && !currentRow.isEmpty {
+            if currentWidth + pillWidth + (currentRow.isEmpty ? 0 : spacing) > maxWidth && !currentRow.isEmpty {
                 rows.append(currentRow)
                 currentRow = [text]
-                currentWidth = estimatedWidth
+                currentWidth = pillWidth
             } else {
-                currentWidth += estimatedWidth + (currentRow.isEmpty ? 0 : spacing)
+                currentWidth += pillWidth + (currentRow.isEmpty ? 0 : spacing)
                 currentRow.append(text)
             }
         }
         if !currentRow.isEmpty { rows.append(currentRow) }
-
         return rows
+    }
+
+    /// Measure actual pill width using UIFont metrics.
+    private func measurePillWidth(_ text: String) -> CGFloat {
+        #if canImport(UIKit)
+        let font = UIFont.systemFont(ofSize: 13, weight: .medium) // matches RayaTypography.buttonSmall
+        let textWidth = (text as NSString).size(withAttributes: [.font: font]).width
+        return textWidth + 24 + 2 // 12pt padding each side + border
+        #else
+        return CGFloat(text.count) * 8 + 26
+        #endif
     }
 }
 

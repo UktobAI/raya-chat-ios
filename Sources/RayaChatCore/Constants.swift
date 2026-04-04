@@ -23,8 +23,8 @@ public enum Constants {
     // Storage
     public static let maxMessagesInMemory = 500
     public static let maxImagesPerMessage = 5
-    public static let maxFeedbackLength = 500
-    public static let feedbackCountdownSeconds = 10
+    public static let maxFeedbackLength = 200
+    public static let feedbackCountdownSeconds = 3
 
     // Storage keys
     public static let sessionIdKey = "raya-chat-session-id"

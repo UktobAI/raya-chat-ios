@@ -1,12 +1,10 @@
 import SwiftUI
 import RayaChatCore
 
-/// Scrollable message list with auto-scroll, streaming message, and footer content.
-/// Matches Android SDK MessageList.kt auto-scroll behavior:
-/// - User scrolls up → auto-scroll stops, scroll-to-bottom button appears
-/// - User scrolls back to bottom → auto-scroll resumes, button hides
-/// - New message → animated scroll
-/// - Streaming chunk / footer change → instant scroll
+/// Scrollable message list matching Android SDK auto-scroll behavior.
+///
+/// Scroll detection uses a `isProgrammaticScroll` flag to distinguish
+/// user scrolls from auto-scrolls — same approach as Android's `isScrollInProgress`.
 struct MessageList<Footer: View>: View {
     let messages: [TypeMessage]
     let currentMessage: String
@@ -16,7 +14,9 @@ struct MessageList<Footer: View>: View {
     var footerChangeSignal: Int = 0
 
     @State private var userScrolledUp = false
-    @State private var isNearBottom = true
+    @State private var isProgrammaticScroll = false
+    @State private var scrollViewHeight: CGFloat = 0
+    @State private var lastBottomY: CGFloat = 0
 
     var body: some View {
         let isStreaming = !currentMessage.isEmpty
@@ -33,91 +33,127 @@ struct MessageList<Footer: View>: View {
             ZStack(alignment: .bottomTrailing) {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        // Persistent messages
                         ForEach(messages) { msg in
                             MessageBubble(message: msg, botIcon: botIcon, onImagePress: onImagePress)
                                 .id(msg.id)
                         }
 
-                        // Streaming message
                         if let streaming = streamingMsg {
                             MessageBubble(message: streaming, botIcon: botIcon)
                                 .id("__streaming__")
                         }
 
-                        // Footer (typing, presets, commands)
                         footerContent()
                             .id("__footer__")
 
-                        // Scroll anchor at the very bottom — invisible
+                        // Invisible anchor at absolute bottom
                         Color.clear
                             .frame(height: 1)
                             .id("__bottom__")
-
-                        // Scroll position detector — tracks how far from bottom the user is
-                        GeometryReader { geo in
-                            Color.clear
-                                .preference(
-                                    key: ScrollOffsetKey.self,
-                                    value: geo.frame(in: .named("scrollArea")).maxY
-                                )
-                        }
-                        .frame(height: 0)
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: BottomPositionKey.self,
+                                        value: geo.frame(in: .named("chatScroll")).minY
+                                    )
+                                }
+                            )
                     }
                 }
-                .coordinateSpace(name: "scrollArea")
-                .onPreferenceChange(ScrollOffsetKey.self) { maxY in
-                    // maxY is the bottom edge of content relative to the scroll area.
-                    // When near the bottom of the scroll view, maxY is close to the visible height.
-                    // When scrolled up, maxY is much larger than the visible height.
-                    // We consider "near bottom" if maxY < screen height + 150pt buffer.
-                    let screenHeight = 900.0 // approximate — exact value not needed
-                    let nearBottom = maxY < screenHeight + 150
+                .coordinateSpace(name: "chatScroll")
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: ScrollViewHeightKey.self,
+                            value: geo.size.height
+                        )
+                    }
+                )
+                .onPreferenceChange(ScrollViewHeightKey.self) { h in
+                    scrollViewHeight = h
+                }
+                .onPreferenceChange(BottomPositionKey.self) { bottomY in
+                    // IGNORE position changes during programmatic auto-scroll
+                    // This is the key fix — matches Android's isScrollInProgress guard
+                    guard !isProgrammaticScroll else { return }
+                    guard scrollViewHeight > 0 else { return }
 
-                    if nearBottom && userScrolledUp {
-                        // User scrolled back to bottom → re-enable auto-scroll
-                        userScrolledUp = false
-                    } else if !nearBottom && !userScrolledUp && isNearBottom {
-                        // User scrolled away from bottom → disable auto-scroll
+                    let threshold: CGFloat = 80
+                    let nearBottom = bottomY <= scrollViewHeight + threshold && bottomY > 0
+
+                    // Detect scroll DIRECTION (like Android's firstVisibleIndex comparison)
+                    let scrolledUpward = bottomY > lastBottomY + 5 // 5pt deadzone
+                    lastBottomY = bottomY
+
+                    if scrolledUpward && !nearBottom && !userScrolledUp {
+                        // User scrolled UP away from bottom → show button
                         userScrolledUp = true
+                    } else if nearBottom && userScrolledUp {
+                        // User scrolled back to bottom → hide button
+                        userScrolledUp = false
                     }
-                    isNearBottom = nearBottom
                 }
 
-                // Scroll-to-bottom button — visible when user scrolls up
-                ScrollToBottomButton(visible: userScrolledUp) {
-                    userScrolledUp = false
-                    withAnimation {
-                        proxy.scrollTo("__bottom__", anchor: .bottom)
+                // Scroll-to-bottom button
+                if userScrolledUp {
+                    ScrollToBottomButton(visible: true) {
+                        userScrolledUp = false
+                        isProgrammaticScroll = true
+                        withAnimation {
+                            proxy.scrollTo("__bottom__", anchor: .bottom)
+                        }
+                        // Reset flag after animation completes
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            isProgrammaticScroll = false
+                        }
                     }
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 16)
+                    .transition(.scale.combined(with: .opacity))
                 }
-                .padding(.trailing, 16)
-                .padding(.bottom, 16)
             }
-            // New message added → animated scroll to bottom
+            .animation(.easeInOut(duration: 0.2), value: userScrolledUp)
+            // New message → animated scroll
             .onChange(of: messages.count) { _ in
                 guard !userScrolledUp else { return }
-                withAnimation {
-                    proxy.scrollTo("__bottom__", anchor: .bottom)
+                isProgrammaticScroll = true
+                withAnimation { proxy.scrollTo("__bottom__", anchor: .bottom) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    isProgrammaticScroll = false
                 }
             }
-            // Streaming chunk → instant scroll (no animation to avoid stutter)
+            // Streaming → instant scroll
             .onChange(of: currentMessage) { _ in
                 guard !userScrolledUp else { return }
+                isProgrammaticScroll = true
                 proxy.scrollTo("__bottom__", anchor: .bottom)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isProgrammaticScroll = false
+                }
             }
-            // Footer changes (presets, typing, commands) → instant scroll
+            // Footer changes → instant scroll
             .onChange(of: footerChangeSignal) { _ in
                 guard !userScrolledUp else { return }
+                isProgrammaticScroll = true
                 proxy.scrollTo("__bottom__", anchor: .bottom)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isProgrammaticScroll = false
+                }
             }
         }
     }
 }
 
-// MARK: - Scroll Position Tracking
+// MARK: - Preference Keys
 
-private struct ScrollOffsetKey: PreferenceKey {
+private struct BottomPositionKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct ScrollViewHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()

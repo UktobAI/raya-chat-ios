@@ -1,7 +1,8 @@
 import SwiftUI
 import RayaChatCore
 
-/// Circular countdown timer in a bot bubble — shown after feedback_received.
+/// Circular countdown timer in a bot bubble — matches Android CountdownClose.kt.
+/// 3 seconds, 32pt circle, 3pt stroke, starts at top center.
 struct CountdownClose: View {
     let message: String
     let botIcon: String?
@@ -25,22 +26,22 @@ struct CountdownClose: View {
             }
 
             HStack(spacing: 10) {
-                // Circular countdown
+                // Circular countdown — 32pt, 3pt stroke (matches Android)
                 ZStack {
                     Circle()
-                        .stroke(theme.border, lineWidth: 2)
-                        .frame(width: 28, height: 28)
+                        .stroke(theme.border, lineWidth: 3)
+                        .frame(width: 32, height: 32)
                     Circle()
                         .trim(from: 0, to: progress)
-                        .stroke(theme.gradientColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .frame(width: 28, height: 28)
-                        .rotationEffect(.degrees(-90))
+                        .stroke(theme.gradientColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .frame(width: 32, height: 32)
+                        .rotationEffect(.degrees(-90)) // start at top center
                     Text("\(count)")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold)) // matches Android 12.sp
                         .foregroundColor(theme.botBubbleForeground)
                 }
 
-                Text(RayaStrings.get("session_closed", locale: locale))
+                Text("Ending session...")
                     .font(RayaTypography.caption)
                     .foregroundColor(theme.mutedForeground)
             }

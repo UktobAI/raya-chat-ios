@@ -1,7 +1,8 @@
 import SwiftUI
 import RayaChatCore
 
-/// Full-screen confirmation overlay for ending the chat session.
+/// Full-screen confirmation overlay — matches Android EndChatModal.kt.
+/// Chat icon in muted circle (not bot avatar), stacked buttons.
 struct EndChatModal: View {
     let botIcon: String?
     let locale: String
@@ -19,15 +20,14 @@ struct EndChatModal: View {
 
             // Modal card
             VStack(spacing: 20) {
-                // Bot icon
-                if let url = botIcon.flatMap({ $0.isEmpty ? nil : $0 }), let imageUrl = URL(string: url) {
-                    AsyncImage(url: imageUrl) { image in
-                        image.resizable().scaledToFit()
-                    } placeholder: {
-                        Circle().fill(theme.surfaceVariant)
-                    }
-                    .frame(width: 48, height: 48)
-                    .clipShape(Circle())
+                // Chat icon in muted circle (matches Android — 75dp box, muted bg)
+                ZStack {
+                    Circle()
+                        .fill(theme.muted)
+                        .frame(width: 75, height: 75)
+                    Image(systemName: "xmark.bubble")
+                        .font(.system(size: 28))
+                        .foregroundColor(theme.mutedForeground)
                 }
 
                 Text(RayaStrings.get("end_chat_title", locale: locale))
@@ -39,8 +39,9 @@ struct EndChatModal: View {
                     .foregroundColor(theme.mutedForeground)
                     .multilineTextAlignment(.center)
 
-                // Buttons — stacked vertically
+                // Buttons — stacked vertically, full width (matches Android Column)
                 VStack(spacing: 12) {
+                    // Cancel — outlined
                     Button(action: onCancel) {
                         Text(RayaStrings.get("cancel", locale: locale))
                             .font(RayaTypography.bodyBold)
@@ -51,6 +52,7 @@ struct EndChatModal: View {
                             .clipShape(Capsule())
                     }
 
+                    // End Session — gradient filled
                     Button(action: onEndSession) {
                         Text(RayaStrings.get("end_session", locale: locale))
                             .font(RayaTypography.bodyBold)

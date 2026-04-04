@@ -1,7 +1,7 @@
 import SwiftUI
 import RayaChatCore
 
-/// Pill buttons in a bot bubble for end_session command.
+/// Pill buttons in a bot bubble for end_session command — matches Android EndSessionUI.kt.
 struct EndSessionUI: View {
     let message: String
     let options: [AnyCodable]
@@ -19,16 +19,32 @@ struct EndSessionUI: View {
                     .padding(.bottom, 10)
             }
 
-            HStack(spacing: 10) {
+            // Options — wrapping layout matching Android FlowRow, 8pt spacing
+            WrappingOptions(options: options, theme: theme, onSelect: onSelect)
+        }
+    }
+}
+
+/// Wrapping option buttons — matches Android FlowRow(spacedBy(8.dp))
+private struct WrappingOptions: View {
+    let options: [AnyCodable]
+    let theme: RayaTheme
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        // Simple VStack + HStack wrapping for iOS 15 compatibility
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
                 ForEach(0..<options.count, id: \.self) { index in
                     let option = options[index].description
                     Button(action: { onSelect(option) }) {
                         Text(option)
                             .font(RayaTypography.buttonSmall)
-                            .foregroundColor(theme.botBubbleForeground)
+                            .foregroundColor(theme.foreground)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .overlay(Capsule().stroke(theme.border, lineWidth: 1))
+                            .background(theme.surface)
+                            .overlay(Capsule().stroke(theme.borderWarm, lineWidth: 1))
                             .clipShape(Capsule())
                     }
                 }
@@ -38,6 +54,7 @@ struct EndSessionUI: View {
 }
 
 /// Shared wrapper for command UIs rendered as bot bubbles.
+/// Matches Android BotBubbleWrapper — 16pt padding, 16pt corners with 4pt bottom-left.
 struct BotBubbleWrapper<Content: View>: View {
     let botIcon: String?
     @ViewBuilder let content: Content
@@ -60,10 +77,10 @@ struct BotBubbleWrapper<Content: View>: View {
             VStack(alignment: .leading, spacing: 0) {
                 content
             }
-            .padding(14)
+            .padding(16) // matches Android 16.dp
             .frame(maxWidth: 320, alignment: .leading)
             .background(theme.botBubble)
-            .clipShape(RoundedCorner(tl: 18, tr: 18, bl: 4, br: 18))
+            .clipShape(RoundedCorner(tl: 16, tr: 16, bl: 4, br: 16)) // matches Android 16dp corners, 4dp bottom-left
 
             Spacer(minLength: 0)
         }
