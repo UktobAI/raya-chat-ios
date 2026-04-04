@@ -25,6 +25,7 @@ final class WebSocketManager: @unchecked Sendable {
     private var shouldNotReconnect = false
     private var reconnectAttempts = 0
     private var isAppActive = true
+    private var hasNotifiedOpen = false
 
     private var heartbeatTask: Task<Void, Never>?
     private var heartbeatTimeoutTask: Task<Void, Never>?
@@ -45,6 +46,7 @@ final class WebSocketManager: @unchecked Sendable {
         self.url = url
         manualClose = false
         shouldNotReconnect = false
+        hasNotifiedOpen = false
         updateStatus(.connecting)
 
         guard let wsURL = URL(string: url) else {
@@ -61,21 +63,37 @@ final class WebSocketManager: @unchecked Sendable {
         task = session?.webSocketTask(with: wsURL)
         task?.resume()
 
-        // Start receive loop
+        // Start receive loop — connection is confirmed on first successful receive
         startReceiving()
 
-        // URLSessionWebSocketTask doesn't have a delegate callback for "open"
-        // The first successful receive or send indicates the connection is open.
-        // We'll trigger onOpen from the first successful operation.
-        // For now, optimistically mark as connected after a brief delay.
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            guard let self, !self.destroyed, self._status.value == .connecting else { return }
-            self.updateStatus(.connected)
-            self.reconnectAttempts = 0
-            self.startHeartbeat()
-            self.flushQueue()
-            self.callbacks?.onOpen()
+        // Send a ping immediately to trigger a pong — confirms connection faster.
+        // URLSessionWebSocketTask buffers this until the handshake completes.
+        task?.send(.string("ping")) { [weak self] error in
+            if let error {
+                Log.e("WS", "Initial ping failed: \(error.localizedDescription)")
+            } else {
+                Log.d("WS", "Initial ping sent successfully")
+                // If ping succeeds, connection is open even if receive hasn't gotten anything yet
+                guard let self, !self.hasNotifiedOpen else { return }
+                self.hasNotifiedOpen = true
+                Log.i("WS", "← OPEN (confirmed via successful ping send)")
+                DispatchQueue.main.async {
+                    self.reconnectAttempts = 0
+                    self.updateStatus(.connected)
+                    self.startHeartbeat()
+                    self.flushQueue()
+                    self.callbacks?.onOpen()
+                }
+            }
+        }
+
+        // Fallback: if still not connected after 10s, log diagnostic info
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard let self else { return }
+            if !self.hasNotifiedOpen {
+                Log.e("WS", "⚠️ CONNECTION TIMEOUT — still not open after 10s. Status: \(self._status.value), task: \(self.task != nil), destroyed: \(self.destroyed)")
+            }
         }
     }
 
@@ -87,11 +105,10 @@ final class WebSocketManager: @unchecked Sendable {
         let logData = data.count > 500 ? "\(data.prefix(500))...[\(data.count) chars total]" : data
         Log.d("WS", "→ SEND (\(data.count) chars): \(logData)")
 
-        if _status.value == .connected {
-            task?.send(.string(data)) { [weak self] error in
+        if _status.value == .connected, let task = self.task {
+            task.send(.string(data)) { error in
                 if let error {
                     Log.e("WS", "→ SEND error: \(error.localizedDescription)")
-                    self?.callbacks?.onError("Send failed: \(error.localizedDescription)")
                 }
             }
             return true
@@ -99,10 +116,12 @@ final class WebSocketManager: @unchecked Sendable {
 
         // Queue if connecting
         if _status.value == .connecting {
+            Log.d("WS", "→ QUEUED (connecting)")
             messageQueue.enqueue(data)
             return true
         }
 
+        Log.w("WS", "→ SEND failed — not connected (status: \(_status.value))")
         return false
     }
 
@@ -153,9 +172,29 @@ final class WebSocketManager: @unchecked Sendable {
         receiveTask?.cancel()
         receiveTask = Task { [weak self] in
             guard let self else { return }
+
             while !self.destroyed && !Task.isCancelled {
+                guard let currentTask = self.task else {
+                    Log.w("WS", "← Receive loop: task is nil, breaking")
+                    break
+                }
+
                 do {
-                    guard let message = try await self.task?.receive() else { break }
+                    let message = try await currentTask.receive()
+
+                    // First successful receive = connection is open
+                    if !self.hasNotifiedOpen {
+                        self.hasNotifiedOpen = true
+                        Log.i("WS", "← OPEN (first message received)")
+                        await MainActor.run {
+                            self.reconnectAttempts = 0
+                            self.updateStatus(.connected)
+                            self.startHeartbeat()
+                            self.flushQueue()
+                            self.callbacks?.onOpen()
+                        }
+                    }
+
                     switch message {
                     case .string(let text):
                         let logText = text.count > 300 ? "\(text.prefix(300))...[\(text.count) chars]" : text
@@ -169,7 +208,7 @@ final class WebSocketManager: @unchecked Sendable {
                             }
                         }
                     case .data:
-                        break // We don't handle binary
+                        break
                     @unknown default:
                         break
                     }
@@ -185,6 +224,7 @@ final class WebSocketManager: @unchecked Sendable {
                     break
                 }
             }
+            Log.d("WS", "← Receive loop ended")
         }
     }
 
@@ -218,14 +258,11 @@ final class WebSocketManager: @unchecked Sendable {
         heartbeatTimeoutTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Constants.heartbeatTimeout * 1_000_000_000))
             guard let self, !self.destroyed, !Task.isCancelled else { return }
-            // No pong received — connection is dead
             Log.w("WS", "← Heartbeat timeout — no pong in \(Constants.heartbeatTimeout)s")
             self.stopHeartbeat()
-            if let closeCode = URLSessionWebSocketTask.CloseCode(rawValue: Constants.wsCloseHeartbeatTimeout) {
-                self.task?.cancel(with: closeCode, reason: "Heartbeat timeout".data(using: .utf8))
-            } else {
-                self.task?.cancel(with: .abnormalClosure, reason: "Heartbeat timeout".data(using: .utf8))
-            }
+            // URLSessionWebSocketTask.CloseCode doesn't support custom codes (4000).
+            // Use .goingAway (1001) — semantically correct: "endpoint is going away".
+            self.task?.cancel(with: .goingAway, reason: "Heartbeat timeout".data(using: .utf8))
             self.task = nil
             await MainActor.run {
                 self.scheduleReconnect()
@@ -249,17 +286,21 @@ final class WebSocketManager: @unchecked Sendable {
         }
 
         updateStatus(.reconnecting)
-        reconnectAttempts += 1
 
-        let delay = min(
-            pow(2.0, Double(reconnectAttempts)) * 0.5,
-            Constants.maxReconnectDelay
-        )
-        Log.i("WS", "Reconnecting in \(delay)s (attempt \(self.reconnectAttempts))")
+        // Exponential backoff with jitter — matches Android SDK and spec exactly:
+        // delay = min(1000 * 2^attempt + random(0..1000), 30000) milliseconds
+        let baseDelayMs = 1000.0 * pow(2.0, Double(reconnectAttempts))
+        let jitterMs = Double.random(in: 0...1000)
+        let delayMs = min(baseDelayMs + jitterMs, Constants.maxReconnectDelay * 1000)
+        let delaySec = delayMs / 1000.0
+
+        reconnectAttempts += 1 // increment AFTER calculating delay (matches Android)
+
+        Log.i("WS", "Reconnecting in \(String(format: "%.1f", delaySec))s (attempt \(self.reconnectAttempts), jitter \(Int(jitterMs))ms)")
 
         reconnectTask?.cancel()
         reconnectTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(delayMs * 1_000_000))
             guard let self, !self.destroyed, !Task.isCancelled else { return }
             self.task?.cancel(with: .normalClosure, reason: nil)
             self.task = nil
@@ -279,6 +320,7 @@ final class WebSocketManager: @unchecked Sendable {
 
     private func flushQueue() {
         let queued = messageQueue.flushAll()
+        Log.d("WS", "Flushing \(queued.count) queued messages")
         for msg in queued {
             _ = send(msg)
         }

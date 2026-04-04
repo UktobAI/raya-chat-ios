@@ -4,10 +4,9 @@ import UIKit
 #endif
 import RayaChatCore
 
-/// Field identifiers for focus management.
-enum FormField: Hashable { case name, email, phone }
-
-/// Form screen — user info collection with validation.
+/// Form screen — matches Android SDK FormScreen.kt exactly.
+/// Gradient header with back button, avatar circle overlapping white card,
+/// clean inputs with 1px border, gradient submit button.
 struct FormScreen: View {
     let botConfig: BotConfigProps
     var onSubmit: (UserInfo) -> Void
@@ -19,13 +18,12 @@ struct FormScreen: View {
     @State private var errors: Set<String> = []
     @State private var isLoading = false
     @Environment(\.rayaTheme) private var theme
-    @FocusState private var focusedField: FormField?
 
     var body: some View {
         let locale = theme.locale
 
         VStack(spacing: 0) {
-            // Header with back button
+            // Header handles ignoresSafeArea internally — no duplicate needed
             Header(
                 botIcon: botConfig.chatboxChatIcon,
                 showBackButton: true,
@@ -34,80 +32,73 @@ struct FormScreen: View {
                 onBack: onBack
             )
 
+            // ── Scrollable content ──
             ScrollView {
                 VStack(spacing: 0) {
                     Spacer().frame(height: 32)
 
-                    // Avatar circle
+                    // Avatar circle — overlaps into card below
                     ZStack {
                         Circle()
                             .fill(theme.gradientColor)
                             .frame(width: 44, height: 44)
-                        RayaIcons.user
-                            .font(.system(size: 22))
+                        Image(systemName: "person")
+                            .font(.system(size: 22, weight: .medium))
                             .foregroundColor(theme.gradientForeground)
                     }
                     .zIndex(1)
 
-                    // Card — overlaps avatar by 22pt
-                    VStack(spacing: 14) {
-                        // Welcome text
-                        Text(RayaStrings.get("welcome_form", locale: locale))
-                            .font(RayaTypography.body)
+                    // ── White card — overlaps avatar by 22pt ──
+                    VStack(spacing: 0) {
+                        // Welcome text — centered
+                        Text("Welcome to our live chat! Please fill in the form below before starting the chat.")
+                            .font(.system(size: 14))
                             .foregroundColor(theme.mutedForeground)
                             .multilineTextAlignment(.center)
-                            .padding(.bottom, 6)
+                            .lineSpacing(3)
+                            .padding(.bottom, 20)
 
                         // Full Name
-                        FormInput(
+                        SimpleFormInput(
                             text: $fullName,
                             placeholder: RayaStrings.get("full_name", locale: locale),
                             hasError: errors.contains("fullName"),
                             errorText: RayaStrings.get("error_name", locale: locale),
-                            focused: $focusedField,
-                            field: .name,
-                            nextField: botConfig.enableUserEmail ? .email : (botConfig.enableUserPhone ? .phone : nil)
+                            onClearError: { errors.remove("fullName") }
                         )
+
+                        Spacer().frame(height: 14)
 
                         // Email
                         if botConfig.enableUserEmail {
-                            FormInput(
+                            SimpleFormInput(
                                 text: $email,
                                 placeholder: RayaStrings.get("email", locale: locale),
                                 hasError: errors.contains("email"),
                                 errorText: RayaStrings.get("error_email", locale: locale),
-                                isEmail: true,
-                                focused: $focusedField,
-                                field: .email,
-                                nextField: botConfig.enableUserPhone ? .phone : nil,
-                                onBlurValidate: {
-                                    if !email.isEmpty && !validateEmail(email.trimmingCharacters(in: .whitespaces)) {
-                                        errors.insert("email")
-                                    } else {
-                                        errors.remove("email")
-                                    }
-                                }
+                                onClearError: { errors.remove("email") }
                             )
+                            Spacer().frame(height: 14)
                         }
 
                         // Phone
                         if botConfig.enableUserPhone {
-                            FormInput(
+                            SimpleFormInput(
                                 text: $phone,
                                 placeholder: RayaStrings.get("phone_number", locale: locale),
                                 hasError: errors.contains("phone"),
                                 errorText: RayaStrings.get("error_phone", locale: locale),
-                                isPhone: true,
-                                focused: $focusedField,
-                                field: .phone,
-                                nextField: nil
+                                onClearError: { errors.remove("phone") }
                             )
+                            Spacer().frame(height: 14)
                         }
 
-                        // Submit button
+                        // Submit button — 48pt height, 8pt corners, gradient bg
                         Button(action: handleSubmit) {
                             HStack(spacing: 8) {
-                                Text(isLoading ? RayaStrings.get("starting_chat", locale: locale) : RayaStrings.get("start_the_chat", locale: locale))
+                                Text(isLoading
+                                     ? RayaStrings.get("starting_chat", locale: locale)
+                                     : RayaStrings.get("start_the_chat", locale: locale))
                                     .font(.system(size: 14, weight: .medium))
                                     .foregroundColor(theme.gradientForeground)
                                 if isLoading {
@@ -123,19 +114,25 @@ struct FormScreen: View {
                         }
                         .disabled(isLoading)
                     }
-                    .padding(.top, 36)
+                    .padding(.top, 36) // space for avatar overlap
                     .padding(.bottom, 24)
                     .padding(.horizontal, 24)
                     .background(theme.formCardBg)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(theme.border, lineWidth: 1))
-                    .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
-                    .offset(y: -22)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(theme.border, lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+                    .offset(y: -22) // overlap avatar
                     .padding(.horizontal, 20)
                 }
             }
         }
         .background(theme.background)
+        .background(alignment: .top) {
+            theme.gradientColor.frame(height: 100).ignoresSafeArea(edges: .top)
+        }
     }
 
     private func handleSubmit() {
@@ -148,69 +145,49 @@ struct FormScreen: View {
         if trimmedName.isEmpty { errors.insert("fullName") }
         if botConfig.enableUserEmail && trimmedEmail.isEmpty { errors.insert("email") }
         if botConfig.enableUserEmail && !trimmedEmail.isEmpty && !validateEmail(trimmedEmail) { errors.insert("email") }
-        if botConfig.enableUserPhone && !trimmedPhone.isEmpty && !validatePhone(trimmedPhone) { errors.insert("phone") }
+        if botConfig.enableUserPhone && trimmedPhone.isEmpty { errors.insert("phone") }
 
         guard errors.isEmpty else { return }
 
         isLoading = true
-        let userInfo = UserInfo(fullName: trimmedName, email: trimmedEmail, phone: trimmedPhone)
-        onSubmit(userInfo)
+        onSubmit(UserInfo(fullName: trimmedName, email: trimmedEmail, phone: trimmedPhone))
     }
 }
 
-// MARK: - Form Input
+// MARK: - Simple Form Input
 
-private struct FormInput: View {
+/// Minimal text field — uses SwiftUI's built-in prompt to avoid ZStack/FocusState overhead.
+private struct SimpleFormInput: View {
     @Binding var text: String
     let placeholder: String
     let hasError: Bool
     let errorText: String
-    var isEmail: Bool = false
-    var isPhone: Bool = false
-    var focused: FocusState<FormField?>.Binding
-    var field: FormField
-    var nextField: FormField?
-    var onBlurValidate: (() -> Void)?
+    var onClearError: () -> Void = {}
 
     @Environment(\.rayaTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            let textField = TextField(placeholder, text: $text)
-                .font(RayaTypography.input)
-                .foregroundColor(theme.foreground)
-                .autocorrectionDisabled()
-                .submitLabel(nextField != nil ? .next : .done)
-                .focused(focused, equals: field)
-                .onSubmit {
-                    onBlurValidate?()
-                    if let next = nextField {
-                        focused.wrappedValue = next
-                    }
-                }
-                .frame(height: 48)
-                .padding(.horizontal, 14)
-                .background(theme.background)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(hasError ? theme.errorRed : theme.inputBorder, lineWidth: 1)
-                )
-
-            #if canImport(UIKit)
-            textField.keyboardType(isEmail ? .emailAddress : isPhone ? .phonePad : .default)
-            #else
-            textField
-            #endif
+            TextField(
+                placeholder,
+                text: Binding(get: { text }, set: { text = $0; onClearError() })
+            )
+            .font(.system(size: 14))
+            .foregroundColor(theme.foreground)
+            .autocorrectionDisabled()
+            .padding(.horizontal, 14)
+            .frame(height: 48)
+            .background(theme.background)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(hasError ? theme.errorRed : theme.inputBorder, lineWidth: 1)
+            )
 
             if hasError {
                 HStack(spacing: 4) {
-                    RayaIcons.exclamation
-                        .font(.system(size: 10))
-                        .foregroundColor(theme.errorRed)
-                    Text(errorText)
-                        .font(RayaTypography.tiny)
-                        .foregroundColor(theme.errorRed)
+                    Text("⚠").font(.system(size: 12)).foregroundColor(theme.errorRed)
+                    Text(errorText).font(.system(size: 12)).foregroundColor(theme.errorRed)
                 }
             }
         }

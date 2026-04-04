@@ -77,9 +77,9 @@ final class MessageHandlerTests: XCTestCase {
 
     func testHandlePresets() {
         handler.handle("""
-        {"type":"presets","presets":["Option A","Option B","Option C"]}
+        {"type":"presets","presets":[{"id":"1","title":"Option A","prompt":"prompt A"},{"id":"2","title":"Option B","prompt":"prompt B"}]}
         """)
-        XCTAssertEqual(delegate.lastPresets, ["Option A", "Option B", "Option C"])
+        XCTAssertEqual(delegate.lastPresets, ["Option A", "Option B"])
     }
 
     func testHandlePresetsEmpty() {
@@ -130,9 +130,11 @@ final class MessageHandlerTests: XCTestCase {
         handler.handle("""
         {"type":"command","content":"auto_close","message":"Session closed due to inactivity."}
         """)
-        // auto_close triggers onError, not onCommand
+        // auto_close triggers onAutoClose, not onCommand or onError (matches Android)
         XCTAssertNil(delegate.lastCommand)
-        XCTAssertNotNil(delegate.lastErrorText)
+        XCTAssertNil(delegate.lastErrorText)
+        XCTAssertNotNil(delegate.lastAutoCloseInfo)
+        XCTAssertEqual(delegate.lastAutoCloseInfo?.reason, .autoClose)
     }
 
     func testHandleInvalidCommand() {
@@ -226,6 +228,7 @@ private class MockDelegate: MessageHandlerDelegate {
     var lastPresets: [String]?
     var lastCommand: CommandData?
     var lastErrorText: String?
+    var lastAutoCloseInfo: SessionCloseInfo?
     var escalationCalled = false
     var lastInfoText: String?
     var lastAgentActivity: TypeMessage?
@@ -255,6 +258,10 @@ private class MockDelegate: MessageHandlerDelegate {
 
     func onError(text: String) {
         lastErrorText = text
+    }
+
+    func onAutoClose(info: SessionCloseInfo) {
+        lastAutoCloseInfo = info
     }
 
     func onEscalation(showButton: Bool) {

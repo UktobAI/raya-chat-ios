@@ -51,6 +51,7 @@ public struct RayaChatView: View {
     private let audioRecorderAdapter: (any AudioRecorderAdapter)?
 
     public var body: some View {
+        // Theme is value type — only recalculated when botConfig or locale changes
         let theme = rayaThemeFrom(botConfig: viewModel.botConfig, locale: locale)
 
         ZStack {
@@ -67,8 +68,7 @@ public struct RayaChatView: View {
                         IntroScreen(
                             botConfig: viewModel.botConfig,
                             sessionCloseInfo: viewModel.client.sessionCloseInfo,
-                            onStartChat: { viewModel.startChat() },
-                            onClose: { viewModel.closeWidget() }
+                            onStartChat: { viewModel.startChat() }
                         )
 
                     case .form:

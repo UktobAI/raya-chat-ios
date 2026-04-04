@@ -19,7 +19,7 @@ struct ChatScreen: View {
 
         ZStack {
             VStack(spacing: 0) {
-                // Header
+                // Header handles ignoresSafeArea internally
                 Header(
                     botIcon: chatIcon,
                     showCloseButton: true,
@@ -68,6 +68,9 @@ struct ChatScreen: View {
                 )
             }
             .background(theme.background)
+            .background(alignment: .top) {
+                theme.gradientColor.frame(height: 100).ignoresSafeArea(edges: .top)
+            }
 
             // Full-screen image viewer
             if fullScreenImage != nil {

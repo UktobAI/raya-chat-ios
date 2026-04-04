@@ -162,6 +162,7 @@ final class CodableTests: XCTestCase {
     // MARK: - ChatMessage
 
     func testChatMessageDecodesResponseType() throws {
+        // created_at is a number (Long) from server — matches actual production response
         let json = """
         {
             "type": "response",
@@ -170,7 +171,7 @@ final class CodableTests: XCTestCase {
                 "chat_session_id": "session-1",
                 "sender": 2,
                 "content": "Hello from bot",
-                "created_at": "1700000000"
+                "created_at": 1700000000
             }
         }
         """.data(using: .utf8)!
@@ -181,16 +182,29 @@ final class CodableTests: XCTestCase {
         XCTAssertEqual(msg.data?.chatSessionId, "session-1")
         XCTAssertEqual(msg.data?.sender, 2)
         XCTAssertEqual(msg.data?.content, "Hello from bot")
+        XCTAssertEqual(msg.data?.createdAt, "1700000000") // number → string conversion
+    }
+
+    func testChatResponseDataHandlesStringCreatedAt() throws {
+        let json = """
+        {"id": "msg-2", "chat_session_id": "s-1", "sender": 2, "content": "Hi", "created_at": "1700000000"}
+        """.data(using: .utf8)!
+
+        let data = try decoder.decode(ChatResponseData.self, from: json)
+        XCTAssertEqual(data.createdAt, "1700000000")
     }
 
     func testChatMessageDecodesPresetsType() throws {
+        // Presets from server are objects with id, title, prompt — not plain strings
         let json = """
-        {"type": "presets", "presets": ["Option A", "Option B", "Option C"]}
+        {"type": "presets", "presets": [{"id":"1","title":"Option A","prompt":"prompt A"},{"id":"2","title":"Option B","prompt":"prompt B"}]}
         """.data(using: .utf8)!
 
         let msg = try decoder.decode(ChatMessage.self, from: json)
         XCTAssertEqual(msg.type, "presets")
-        XCTAssertEqual(msg.presets, ["Option A", "Option B", "Option C"])
+        XCTAssertEqual(msg.presets?.count, 2)
+        XCTAssertEqual(msg.presets?.first?.title, "Option A")
+        XCTAssertEqual(msg.presets?.first?.prompt, "prompt A")
     }
 
     func testChatMessageDecodesCommandType() throws {

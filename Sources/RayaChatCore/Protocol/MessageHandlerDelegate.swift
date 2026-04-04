@@ -21,6 +21,9 @@ protocol MessageHandlerDelegate: AnyObject {
     /// ERROR — server-side error.
     func onError(text: String)
 
+    /// AUTO_CLOSE — session closed by server due to inactivity.
+    func onAutoClose(info: SessionCloseInfo)
+
     /// ESCALATION — human agent connected.
     func onEscalation(showButton: Bool)
 

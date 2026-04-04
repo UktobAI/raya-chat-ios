@@ -1,7 +1,7 @@
 import SwiftUI
 import RayaChatCore
 
-/// Chat message bubble — user (gradient, right) + bot (gray, left + avatar) + system (centered).
+/// Chat message bubble — matches Android SDK MessageBubble.kt.
 struct MessageBubble: View {
     let message: TypeMessage
     let botIcon: String?
@@ -15,120 +15,151 @@ struct MessageBubble: View {
         let hasContent = !(content ?? "").isEmpty
         let attachments = message.attachments
         let hasImages = !attachments.isEmpty
+        let avatarUrl = botIcon.flatMap { $0.isEmpty ? nil : $0 }
+        let timestamp = formatLocalTimeOrEmpty(epochSeconds: message.createdAt.flatMap { Int64($0) })
 
-        // System messages (type 4)
         if message.type == 4 {
-            systemBubble
-        } else if !hasContent && !hasImages {
-            EmptyView()
-        } else {
-        HStack(alignment: .bottom, spacing: 8) {
-            // Bot avatar
-            if !isUser {
-                botAvatar
+            // System message
+            HStack {
+                Spacer()
+                Text(message.content ?? "")
+                    .font(RayaTypography.caption)
+                    .foregroundColor(theme.systemMessageForeground)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
+                    .background(theme.systemMessage)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                Spacer()
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        } else if hasContent || hasImages {
+            // ── Normal message ──
+            // Outer Column: full width, aligned to trailing (user) or leading (bot)
+            VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
 
-            VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
-                // User images — above the text bubble
-                if hasImages && isUser {
-                    imageGrid(attachments)
-                }
-
-                // Text bubble (or bot images inside bubble)
-                if hasContent || (hasImages && !isUser) {
-                    let bubbleShape = isUser
-                        ? RoundedCorner(tl: 18, tr: 18, bl: 18, br: 4)
-                        : RoundedCorner(tl: 18, tr: 18, bl: 4, br: 18)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        // Bot images inside bubble
-                        if hasImages && !isUser {
-                            imageGrid(attachments)
+                if isUser && hasImages {
+                    // User image message
+                    userImageSection(attachments, content, timestamp)
+                } else {
+                    // ── Row: [avatar] [bubble] ──
+                    HStack(alignment: .bottom, spacing: 8) {
+                        if !isUser, let url = avatarUrl, let imageUrl = URL(string: url) {
+                            AsyncImage(url: imageUrl) { image in
+                                image.resizable().scaledToFit()
+                            } placeholder: {
+                                Circle().fill(theme.botBubble)
+                            }
+                            .frame(width: 28, height: 28)
+                            .clipShape(Circle())
                         }
 
-                        if hasContent {
-                            MarkdownText(
-                                content: content!,
-                                color: isUser ? theme.gradientForeground : theme.botBubbleForeground
-                            )
+                        // ── Bubble ──
+                        let bubbleShape = isUser
+                            ? RoundedCorner(tl: 16, tr: 16, bl: 16, br: 4)
+                            : RoundedCorner(tl: 16, tr: 16, bl: 4, br: 16)
+                        let bubbleBg = isUser ? theme.gradientColor : theme.botBubble
+                        let textColor = isUser ? theme.gradientForeground : theme.botBubbleForeground
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            if !isUser && hasImages {
+                                botImageGrid(attachments)
+                            }
+                            if hasContent {
+                                if !isUser {
+                                    MarkdownText(content: content!, color: textColor)
+                                } else {
+                                    Text(content!)
+                                        .font(RayaTypography.body)
+                                        .foregroundColor(textColor)
+                                }
+                            }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, isUser ? 8 : 16)
+                        .background(bubbleBg)
+                        .clipShape(bubbleShape)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(isUser ? theme.gradientColor : theme.botBubble)
-                    .clipShape(bubbleShape)
+
+                    // ── Timestamp — ALWAYS shown if available (both user and bot) ──
+                    if !timestamp.isEmpty {
+                        Text(timestamp)
+                            .font(.system(size: 10))
+                            .foregroundColor(theme.mutedForeground)
+                            .padding(.top, 8)
+                            .padding(.leading, (!isUser && avatarUrl != nil) ? 36 : 0)
+                    }
                 }
 
-                // Timestamp
-                if let ts = message.createdAt?.asInt64, ts > 0 {
-                    Text(formatLocalTimeOrEmpty(epochSeconds: ts))
-                        .font(RayaTypography.tiny)
-                        .foregroundColor(theme.mutedForeground)
-                        .padding(.horizontal, 4)
+                // 20pt spacer (matches Android Spacer(Modifier.height(20.dp)))
+                Color.clear.frame(height: 20)
+            }
+            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+            .padding(.horizontal, 12)
+        }
+    }
+
+    // MARK: - User Image Section
+
+    @ViewBuilder
+    private func userImageSection(_ attachments: [Attachment], _ content: String?, _ timestamp: String) -> some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            HStack(spacing: 6) {
+                ForEach(attachments.prefix(Constants.maxImagesPerMessage), id: \.url) { att in
+                    if let url = URL(string: att.url) {
+                        AsyncImage(url: url) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            RoundedRectangle(cornerRadius: 6).fill(theme.surfaceVariant)
+                        }
+                        .frame(width: 56, height: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .onTapGesture { onImagePress?(att.url) }
+                    }
                 }
             }
-            .frame(maxWidth: 300, alignment: isUser ? .trailing : .leading)
 
-            if isUser { Spacer(minLength: 0) }
-        }
-        .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
-        } // else
-    }
-
-    // MARK: - Subviews
-
-    @ViewBuilder
-    private var botAvatar: some View {
-        if let url = botIcon.flatMap({ $0.isEmpty ? nil : $0 }), let imageUrl = URL(string: url) {
-            AsyncImage(url: imageUrl) { image in
-                image.resizable().scaledToFit()
-            } placeholder: {
-                Circle().fill(theme.botBubble)
+            if let content, !content.isEmpty {
+                Text(content)
+                    .font(RayaTypography.body)
+                    .foregroundColor(theme.gradientForeground)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(theme.gradientColor)
+                    .clipShape(RoundedCorner(tl: 16, tr: 16, bl: 16, br: 4))
+                    .padding(.top, 8)
             }
-            .frame(width: 28, height: 28)
-            .clipShape(Circle())
+
+            if !timestamp.isEmpty {
+                Text(timestamp)
+                    .font(.system(size: 10))
+                    .foregroundColor(theme.mutedForeground)
+                    .padding(.top, 8)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
-    @ViewBuilder
-    private var systemBubble: some View {
-        HStack {
-            Spacer()
-            Text(message.content ?? "")
-                .font(RayaTypography.caption)
-                .foregroundColor(theme.systemMessageForeground)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(theme.systemMessage)
-                .clipShape(Capsule())
-            Spacer()
-        }
-        .padding(.vertical, 4)
-    }
+    // MARK: - Bot Image Grid
 
     @ViewBuilder
-    private func imageGrid(_ attachments: [Attachment]) -> some View {
+    private func botImageGrid(_ attachments: [Attachment]) -> some View {
         HStack(spacing: 4) {
             ForEach(attachments.prefix(Constants.maxImagesPerMessage), id: \.url) { att in
                 if let url = URL(string: att.url) {
                     AsyncImage(url: url) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(theme.surfaceVariant)
+                        RoundedRectangle(cornerRadius: 8).fill(theme.surfaceVariant)
                     }
-                    .frame(width: 60, height: 60)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .frame(width: 80, height: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                     .onTapGesture { onImagePress?(att.url) }
                 }
             }
         }
     }
 }
-
-// MARK: - String Extension
 
 extension String {
     var asInt64: Int64? { Int64(self) }

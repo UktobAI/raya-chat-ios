@@ -1,11 +1,12 @@
 import Foundation
 
 /// Raw inbound WebSocket message before routing by type.
+/// All fields are decoded leniently — type mismatches are handled gracefully.
 public struct ChatMessage: Codable, Sendable {
     public let type: String?
     public let text: String?
     public let content: String?
-    public let presets: [String]?
+    public let presets: [PresetItem]?
     public let data: ChatResponseData?
     public let command: String?
     public let options: [AnyCodable]?
@@ -24,30 +25,74 @@ public struct ChatMessage: Codable, Sendable {
         type = try container.decodeIfPresent(String.self, forKey: .type)
         text = try container.decodeIfPresent(String.self, forKey: .text)
         content = try container.decodeIfPresent(String.self, forKey: .content)
-        presets = try container.decodeIfPresent([String].self, forKey: .presets)
-        data = try container.decodeIfPresent(ChatResponseData.self, forKey: .data)
+
+        // Presets: server sends [{id, title, prompt, ...}] — decode as PresetItem objects
+        presets = try? container.decodeIfPresent([PresetItem].self, forKey: .presets)
+
+        // Data: decode leniently — if it fails, just nil
+        data = try? container.decodeIfPresent(ChatResponseData.self, forKey: .data)
+
         command = try container.decodeIfPresent(String.self, forKey: .command)
-        options = try container.decodeIfPresent([AnyCodable].self, forKey: .options)
+
+        // Options: can be mixed types — decode leniently
+        options = try? container.decodeIfPresent([AnyCodable].self, forKey: .options)
+
         message = try container.decodeIfPresent(String.self, forKey: .message)
-        optional = try container.decodeIfPresent(Bool.self, forKey: .optional)
-        attachments = try container.decodeIfPresent([String].self, forKey: .attachments)
+        optional = try? container.decodeIfPresent(Bool.self, forKey: .optional)
+        attachments = try? container.decodeIfPresent([String].self, forKey: .attachments)
         attachmentType = try container.decodeIfPresent(String.self, forKey: .attachmentType)
     }
 }
 
+/// Preset item from the server — has id, title, prompt, etc.
+/// We extract `title` for display (matches Android's PresetItem).
+public struct PresetItem: Codable, Sendable {
+    public let id: String?
+    public let title: String?
+    public let prompt: String?
+    public let category: String?
+    public let confidence: Double?
+
+    public init(id: String? = nil, title: String? = nil, prompt: String? = nil, category: String? = nil, confidence: Double? = nil) {
+        self.id = id
+        self.title = title
+        self.prompt = prompt
+        self.category = category
+        self.confidence = confidence
+    }
+}
+
 /// Response data payload inside a RESPONSE message.
+/// `created_at` can be either a number (Long) or a string — handle both.
 public struct ChatResponseData: Codable, Sendable {
     public let id: String?
     public let chatSessionId: String?
     public let sender: Int?
     public let content: String?
-    public let createdAt: String?
+    public let createdAt: String? // Stored as string, decoded from either string or number
 
     enum CodingKeys: String, CodingKey {
         case id
         case chatSessionId = "chat_session_id"
         case sender, content
         case createdAt = "created_at"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+        chatSessionId = try container.decodeIfPresent(String.self, forKey: .chatSessionId)
+        sender = try? container.decodeIfPresent(Int.self, forKey: .sender)
+        content = try container.decodeIfPresent(String.self, forKey: .content)
+
+        // created_at: server sends as Long (number) — Android uses Long, we convert to String
+        if let intValue = try? container.decodeIfPresent(Int64.self, forKey: .createdAt) {
+            createdAt = "\(intValue)"
+        } else if let doubleValue = try? container.decodeIfPresent(Double.self, forKey: .createdAt) {
+            createdAt = "\(Int64(doubleValue))"
+        } else {
+            createdAt = try? container.decodeIfPresent(String.self, forKey: .createdAt)
+        }
     }
 }
 
@@ -59,7 +104,6 @@ public enum AnyCodable: Codable, Sendable, Equatable, CustomStringConvertible {
     case bool(Bool)
     case string(String)
 
-    /// The underlying value as Any (for backward compatibility).
     public var value: Any {
         switch self {
         case .int(let v): return v

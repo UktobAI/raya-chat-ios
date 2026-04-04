@@ -104,8 +104,9 @@ final class MessageHandler {
     }
 
     private func handlePresets(_ msg: ChatMessage) {
-        let presets = msg.presets ?? []
-        delegate?.onPresets(presets)
+        // Extract title from PresetItem objects (matches Android: msg.presets?.map { it.title })
+        let titles = (msg.presets ?? []).compactMap { $0.title }.filter { !$0.isEmpty }
+        delegate?.onPresets(titles)
     }
 
     private func handleCommand(_ msg: ChatMessage) {
@@ -115,11 +116,11 @@ final class MessageHandler {
             return
         }
 
-        // Handle auto_close specially
+        // Handle auto_close specially — fires onAutoClose, NOT onError (matches Android)
         if content == "auto_close" {
             let closeMsg = msg.message ?? "Session closed due to inactivity."
-            let errorText = sanitizeErrorMessage(closeMsg)
-            delegate?.onError(text: errorText)
+            let info = SessionCloseInfo(reason: .autoClose, message: sanitizeErrorMessage(closeMsg))
+            delegate?.onAutoClose(info: info)
             return
         }
 

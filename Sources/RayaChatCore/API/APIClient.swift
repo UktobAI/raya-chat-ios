@@ -73,7 +73,7 @@ final class APIClient: @unchecked Sendable {
             URLQueryItem(name: "agent_id", value: "null"),
             URLQueryItem(name: "chat_session_id", value: sessionId),
             URLQueryItem(name: "user_name", value: userInfo.fullName),
-            URLQueryItem(name: "email", value: userInfo.email),
+            URLQueryItem(name: "email", value: userInfo.email.lowercased()),
             URLQueryItem(name: "phone", value: userInfo.phone),
             URLQueryItem(name: "data", value: metadataJson),
         ]

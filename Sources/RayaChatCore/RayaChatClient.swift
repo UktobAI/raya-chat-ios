@@ -106,10 +106,14 @@ public final class RayaChatClient: ObservableObject {
 
         let payload = OutboundMessage(content: trimmed, images: [])
         if let data = try? json.encode(payload), let jsonString = String(data: data, encoding: .utf8) {
+            Log.i("Client", "sendMessage: wsManager=\(wsManager != nil), status=\(connectionStatus), json=\(jsonString.prefix(100))")
             let sent = wsManager?.send(jsonString) ?? false
+            Log.i("Client", "sendMessage: sent=\(sent)")
             if !sent {
                 config.onError?("Message queued — reconnecting...")
             }
+        } else {
+            Log.e("Client", "sendMessage: JSON encoding failed!")
         }
     }
 
@@ -284,15 +288,18 @@ public final class RayaChatClient: ObservableObject {
         let handler = MessageHandler()
         handler.delegate = self
         messageHandler = handler
+        Log.i("Client", "connectInternal: messageHandler set, delegate=\(handler.delegate != nil)")
 
         let ws = WebSocketManager()
         ws.callbacks = self
         wsManager = ws
+        Log.i("Client", "connectInternal: wsManager set, callbacks=\(ws.callbacks != nil)")
 
         // Observe connection status
         ws.status
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
+                Log.i("Client", "Connection status changed: \(status)")
                 self?.connectionStatus = status
                 self?.isConnected = (status == .connected)
             }
@@ -300,6 +307,7 @@ public final class RayaChatClient: ObservableObject {
 
         // Connect
         let url = apiClient.constructWebSocketUrl(sessionId: sessionId, userInfo: userInfo)
+        Log.i("Client", "connectInternal: WS URL = \(url.prefix(150))...")
         ws.connect(url: url)
     }
 
@@ -360,6 +368,7 @@ public final class RayaChatClient: ObservableObject {
 
 extension RayaChatClient: WebSocketManagerCallbacks {
     func onMessage(_ text: String) {
+        Log.d("Client", "onMessage received, handler exists: \(messageHandler != nil)")
         messageHandler?.handle(text)
     }
 
@@ -384,6 +393,7 @@ extension RayaChatClient: WebSocketManagerCallbacks {
 
 extension RayaChatClient: MessageHandlerDelegate {
     func onStep(text: String?) {
+        Log.d("Client", "onStep: \(text ?? "nil")")
         Task { @MainActor in
             loading = true
             status = text
@@ -391,6 +401,7 @@ extension RayaChatClient: MessageHandlerDelegate {
     }
 
     func onChunk(text: String) {
+        Log.d("Client", "onChunk: \(text.prefix(50))")
         Task { @MainActor in
             currentMessage += text
             loading = false
@@ -399,6 +410,7 @@ extension RayaChatClient: MessageHandlerDelegate {
     }
 
     func onResponse(message: TypeMessage, sessionId: String?) {
+        Log.i("Client", "onResponse: id=\(message.id), content=\(message.content?.prefix(50) ?? "nil"), createdAt=\(message.createdAt ?? "nil")")
         Task { @MainActor in
             // Finalize streaming message
             if !currentMessage.isEmpty {
@@ -422,6 +434,7 @@ extension RayaChatClient: MessageHandlerDelegate {
     }
 
     func onPresets(_ newPresets: [String]) {
+        Log.i("Client", "onPresets: \(newPresets)")
         Task { @MainActor in
             presets = newPresets
         }
@@ -445,6 +458,19 @@ extension RayaChatClient: MessageHandlerDelegate {
                 createdAt: "\(Int(Date().timeIntervalSince1970))"
             )
             addMessageToState(errorMsg)
+            loading = false
+            status = nil
+            currentMessage = ""
+        }
+    }
+
+    func onAutoClose(info: SessionCloseInfo) {
+        Log.i("Client", "onAutoClose: \(info.message)")
+        Task { @MainActor in
+            sessionCloseInfo = info
+            // Close WebSocket and block reconnection (matches Android)
+            wsManager?.destroy()
+            wsManager = nil
             loading = false
             status = nil
             currentMessage = ""
