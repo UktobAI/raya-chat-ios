@@ -3,7 +3,7 @@ import Combine
 import RayaChatCore
 
 /// ViewModel orchestrating the INTRO → FORM → CHAT state machine.
-/// Wraps `RayaChatClient` and adds UI-specific state (viewMode, endChatModal, configLoading).
+/// Matches Android RayaChatViewModel.kt exactly.
 @MainActor
 public final class RayaChatViewModel: ObservableObject {
 
@@ -20,6 +20,11 @@ public final class RayaChatViewModel: ObservableObject {
         self.client = RayaChatClient(config: config)
     }
 
+    // Cleanup when ViewModel is destroyed — matches Android onCleared()
+    deinit {
+        client.destroy()
+    }
+
     // MARK: - Lifecycle
 
     /// Fetches bot configuration from API.
@@ -33,27 +38,37 @@ public final class RayaChatViewModel: ObservableObject {
 
     /// Transitions from INTRO to FORM or CHAT.
     public func startChat() {
-        guard viewMode == .intro else { return } // double-tap guard
+        guard viewMode == .intro else { return }
         client.clearSessionCloseInfo()
         if botConfig.enableUserForm {
             viewMode = .form
         } else {
-            viewMode = .chat
-            connectWithEmptyUser()
+            // Skip form — connect then switch to chat (matches Android order)
+            Task {
+                await client.connect(userInfo: UserInfo(), botConfig: botConfig)
+                viewMode = .chat
+            }
         }
     }
 
-    /// Transitions from FORM to CHAT after submitting user info.
+    /// Connects with user info, then transitions to CHAT.
+    /// Order: connect FIRST → viewMode AFTER (matches Android submitForm).
     public func submitForm(userInfo: UserInfo) {
-        viewMode = .chat
         Task {
             await client.connect(userInfo: userInfo, botConfig: botConfig)
+            viewMode = .chat
         }
     }
 
-    /// Shows the end chat confirmation modal.
-    public func requestEndChat() {
-        showEndChatModal = true
+    /// Close button behavior — matches Android closeChat().
+    /// On CHAT: shows end chat confirmation modal.
+    /// On other screens: goes back to INTRO.
+    public func closeChat() {
+        if viewMode == .chat {
+            showEndChatModal = true
+        } else {
+            viewMode = .intro
+        }
     }
 
     /// Cancels end chat — returns to CHAT.
@@ -63,7 +78,15 @@ public final class RayaChatViewModel: ObservableObject {
 
     /// Confirms end session — clears everything, back to INTRO.
     public func confirmEndSession() {
-        showEndChatModal = false
+        Task {
+            showEndChatModal = false
+            await client.endSession()
+            viewMode = .intro
+        }
+    }
+
+    /// End session triggered by server command (feedback_received countdown).
+    public func endSessionFromCommand() {
         Task {
             await client.endSession()
             viewMode = .intro
@@ -74,19 +97,6 @@ public final class RayaChatViewModel: ObservableObject {
     public func goBack() {
         if viewMode == .form {
             viewMode = .intro
-        }
-    }
-
-    /// Called when user closes the widget.
-    public func closeWidget() {
-        client.config.onClose?()
-    }
-
-    // MARK: - Private
-
-    private func connectWithEmptyUser() {
-        Task {
-            await client.connect(userInfo: UserInfo(), botConfig: botConfig)
         }
     }
 }

@@ -149,6 +149,11 @@ struct FormScreen: View {
 
         guard errors.isEmpty else { return }
 
+        // Dismiss keyboard before transition — matches Android focusManager.clearFocus()
+        #if canImport(UIKit)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        #endif
+
         isLoading = true
         onSubmit(UserInfo(fullName: trimmedName, email: trimmedEmail, phone: trimmedPhone))
     }

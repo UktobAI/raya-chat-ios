@@ -84,8 +84,8 @@ public struct RayaChatView: View {
                             botConfig: viewModel.botConfig,
                             imagePickerAdapter: imagePickerAdapter,
                             audioRecorderAdapter: audioRecorderAdapter,
-                            onClose: { viewModel.requestEndChat() },
-                            onEndSession: { viewModel.confirmEndSession() }
+                            onClose: { viewModel.closeChat() },
+                            onEndSession: { viewModel.endSessionFromCommand() }
                         )
                     }
                 }
