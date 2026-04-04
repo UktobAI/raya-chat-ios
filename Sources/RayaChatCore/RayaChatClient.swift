@@ -163,6 +163,7 @@ public final class RayaChatClient: ObservableObject {
     @MainActor
     public func sendAudio(_ base64: String) {
         let ts = Int(Date().timeIntervalSince1970)
+        presets = []
         let audioData = AudioData(type: "local", audioUrls: base64)
         let audioJson = (try? String(data: json.encode(audioData), encoding: .utf8)) ?? "{}"
 
@@ -194,6 +195,7 @@ public final class RayaChatClient: ObservableObject {
     @MainActor
     public func sendCommandResponse(command: String, response: Any) {
         commandData = nil
+        presets = [] // Clear presets alongside commandData to prevent flash between command transitions
 
         let responseString = "\(response)"
         let cmd = OutboundCommandResponse(command: command, response: responseString)
@@ -211,21 +213,31 @@ public final class RayaChatClient: ObservableObject {
     /// Ends the current session — clears all storage and state.
     @MainActor
     public func endSession() async {
+        // 1. Destroy WebSocket + block reconnection
         wsManager?.destroy()
         wsManager = nil
+
+        // 2. Stop lifecycle observer (prevents callbacks during/after cleanup)
+        lifecycleObserver.stop()
+
+        // 3. Stop network monitor
         networkMonitor.stop()
 
+        // 4. Cancel all Combine subscriptions (prevents stale state updates)
+        cancellables.removeAll()
+
+        // 5. Clear identity
         sessionId = ""
         currentSessionId = ""
         currentUserInfo = UserInfo()
 
-        // Clear storage on background
+        // 6. Clear storage on background
         await Task.detached { [messageStore = self.messageStore, keychain = self.keychainStorage] in
             messageStore.deleteAll()
             keychain.clearAll()
         }.value
 
-        // Reset all state
+        // 7. Reset ALL state (matches Android exactly)
         messages = []
         currentMessage = ""
         connectionStatus = .disconnected
@@ -236,7 +248,9 @@ public final class RayaChatClient: ObservableObject {
         commandData = nil
         presets = []
         showHumanAgentBtn = false
+        sessionCloseInfo = nil // Fix: clear stale warning — prevents "Session closed" banner on next Intro
 
+        // 8. Fire callback
         config.onSessionEnd?()
         Log.i("Client", "Session ended — all state cleared")
     }
@@ -256,6 +270,10 @@ public final class RayaChatClient: ObservableObject {
     @MainActor
     private func connectInternal(userInfo: UserInfo, botConfig: BotConfigProps?) async throws {
         currentUserInfo = userInfo
+
+        // Re-start monitors (may have been stopped by endSession)
+        setupNetworkMonitor()
+        setupLifecycleObserver()
 
         // Restore session ID + messages on background
         let (restoredId, storedMessages) = await Task.detached { [keychain = self.keychainStorage, store = self.messageStore] () -> (String, [TypeMessage]) in
@@ -442,6 +460,7 @@ extension RayaChatClient: MessageHandlerDelegate {
 
     func onCommand(data: CommandData) {
         Task { @MainActor in
+            presets = [] // Clear presets when command arrives — prevents stale presets flashing
             commandData = data
             loading = false
             status = nil
@@ -468,6 +487,7 @@ extension RayaChatClient: MessageHandlerDelegate {
         Log.i("Client", "onAutoClose: \(info.message)")
         Task { @MainActor in
             sessionCloseInfo = info
+            presets = []
             // Close WebSocket and block reconnection (matches Android)
             wsManager?.destroy()
             wsManager = nil

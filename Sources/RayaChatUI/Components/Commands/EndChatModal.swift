@@ -1,8 +1,8 @@
 import SwiftUI
 import RayaChatCore
 
-/// Full-screen confirmation overlay — matches Android EndChatModal.kt.
-/// Chat icon in muted circle (not bot avatar), stacked buttons.
+/// Full-screen "End Chat Session" confirmation — matches Android EndChatModal.kt exactly.
+/// NOT a floating card — full-screen takeover with solid theme.background.
 struct EndChatModal: View {
     let botIcon: String?
     let locale: String
@@ -12,36 +12,50 @@ struct EndChatModal: View {
     @Environment(\.rayaTheme) private var theme
 
     var body: some View {
+        // Full-screen solid background (NOT semi-transparent overlay)
         ZStack {
-            // Dim background
-            Color.black.opacity(0.5)
+            theme.background
                 .ignoresSafeArea()
                 .onTapGesture { onCancel() }
 
-            // Modal card
-            VStack(spacing: 20) {
-                // Chat icon in muted circle (matches Android — 75dp box, muted bg)
+            VStack(spacing: 0) {
+                // Icon in muted circle — 75pt, matches Android messageSquareX
                 ZStack {
                     Circle()
                         .fill(theme.muted)
                         .frame(width: 75, height: 75)
-                    Image(systemName: "xmark.bubble")
+                    let iconColor = theme.isDark ? Color(hex: 0xA1A1AA) : Color(hex: 0x71717A)
+                    // Composite: chat bubble + X overlay (no single SF Symbol available)
+                    Image(systemName: "message.fill")
                         .font(.system(size: 28))
-                        .foregroundColor(theme.mutedForeground)
+                        .foregroundColor(iconColor)
+                        .overlay(
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .heavy))
+                                .foregroundColor(theme.muted)
+                                .offset(y: -2)
+                        )
                 }
 
+                Spacer().frame(height: 24)
+
+                // Title — "End Chat Session"
                 Text(RayaStrings.get("end_chat_title", locale: locale))
                     .font(RayaTypography.subheading)
                     .foregroundColor(theme.foreground)
 
-                Text(RayaStrings.get("end_chat_message", locale: locale))
+                Spacer().frame(height: 8)
+
+                // Subtitle — "Do you want to end this chat session?"
+                Text(RayaStrings.get("end_chat_subtitle", locale: locale))
                     .font(RayaTypography.body)
                     .foregroundColor(theme.mutedForeground)
-                    .multilineTextAlignment(.center)
 
-                // Buttons — stacked vertically, full width (matches Android Column)
+                Spacer().frame(height: 32)
+
+                // Buttons — stacked vertically, full width, 16pt horizontal padding
                 VStack(spacing: 12) {
-                    // Cancel — outlined
+                    // Cancel — outlined pill, 52pt height
                     Button(action: onCancel) {
                         Text(RayaStrings.get("cancel", locale: locale))
                             .font(RayaTypography.bodyBold)
@@ -52,7 +66,7 @@ struct EndChatModal: View {
                             .clipShape(Capsule())
                     }
 
-                    // End Session — gradient filled
+                    // End Session — gradient filled pill, 52pt height
                     Button(action: onEndSession) {
                         Text(RayaStrings.get("end_session", locale: locale))
                             .font(RayaTypography.bodyBold)
@@ -66,10 +80,6 @@ struct EndChatModal: View {
                 .padding(.horizontal, 16)
             }
             .padding(32)
-            .background(theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 20))
-            .shadow(color: .black.opacity(0.15), radius: 20, y: 10)
-            .padding(.horizontal, 32)
         }
     }
 }
