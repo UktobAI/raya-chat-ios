@@ -9,6 +9,7 @@ struct IntroScreen: View {
     var onStartChat: () -> Void
 
     @Environment(\.rayaTheme) private var theme
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         let locale = theme.locale
@@ -124,7 +125,7 @@ struct IntroScreen: View {
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(theme.gradientForeground)
                                 LucideSendIcon()
-                                    .fill(theme.gradientForeground)
+                                    .fill(theme.gradientForeground, style: FillStyle(eoFill: true))
                                     .frame(width: 16, height: 16)
                             }
                             .frame(maxWidth: .infinity)
@@ -160,18 +161,24 @@ struct IntroScreen: View {
                 }
             }
 
-            // ── Footer — full-width bar with footerBg ──
-            HStack(spacing: 4) {
-                Text(RayaStrings.get("powered_by", locale: locale))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(theme.footerText)
-                Text(RayaStrings.get("teammates", locale: locale))
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(theme.footerText)
+            // ── Footer — full-width bar, clickable → teammates.ai ──
+            Button {
+                if let url = URL(string: "https://teammates.ai") {
+                    openURL(url)
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(RayaStrings.get("powered_by", locale: locale))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(theme.footerText)
+                    Text(RayaStrings.get("teammates", locale: locale))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(theme.footerText)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(theme.footerBg)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(theme.footerBg)
         }
         .background(theme.background)
         .background(alignment: .top) {

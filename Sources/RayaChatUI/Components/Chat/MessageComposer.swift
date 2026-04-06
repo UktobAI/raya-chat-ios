@@ -17,7 +17,7 @@ struct MessageComposer: View {
 
     @State private var text = ""
     @State private var selectedImages: [ImageAsset] = []
-    @State private var isFocused = false
+    @FocusState private var isFocused: Bool
     @Environment(\.rayaTheme) private var theme
 
     private var hasText: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -42,6 +42,7 @@ struct MessageComposer: View {
                 TextField(actualPlaceholder, text: $text)
                     .font(RayaTypography.input)
                     .foregroundColor(theme.foreground)
+                    .focused($isFocused)
                     .lineLimit(6)
                     .padding(.vertical, 2)
 
@@ -66,12 +67,12 @@ struct MessageComposer: View {
 
                     Spacer()
 
-                    // Right: Send button
+                    // Right: Send button — Lucide send icon in circle
                     Button(action: handleSend) {
                         let sendColor = theme.isDark ? Color.white : Color(hex: 0x3F3F46)
-                        RayaIcons.send
-                            .font(.system(size: 16))
-                            .foregroundColor(sendColor)
+                        LucideSendIcon()
+                            .fill(sendColor, style: FillStyle(eoFill: true))
+                            .frame(width: 18, height: 18)
                             .frame(width: 38, height: 38)
                             .background(theme.sendBtnBg)
                             .clipShape(Circle())
@@ -79,7 +80,8 @@ struct MessageComposer: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.top, hasImages ? 2 : 8)
+            .padding(.bottom, 10)
             .background(theme.composerBg)
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .overlay(
@@ -98,7 +100,7 @@ struct MessageComposer: View {
     private func composerButton(icon: Image, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             icon
-                .font(.system(size: 20))
+                .font(.system(size: 22))
                 .foregroundColor(iconColor)
                 .frame(width: 36, height: 36)
         }

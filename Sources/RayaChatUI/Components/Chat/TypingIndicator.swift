@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Three animated dots in a bot bubble — shown while the bot is processing.
+/// Three animated dots in a bot bubble — matches Android 800ms keyframe cycle.
+/// Each dot bounces up (-6pt) then back down, staggered by 150ms.
 struct TypingIndicator: View {
     let botIcon: String?
 
-    @State private var isAnimating = false
     @Environment(\.rayaTheme) private var theme
 
     var body: some View {
@@ -20,19 +20,17 @@ struct TypingIndicator: View {
                 .clipShape(Circle())
             }
 
-            // Dots bubble
-            HStack(spacing: 4) {
-                ForEach(0..<3, id: \.self) { index in
-                    Circle()
-                        .fill(theme.mutedForeground)
-                        .frame(width: 6, height: 6)
-                        .offset(y: isAnimating ? -6 : 0)
-                        .animation(
-                            .easeInOut(duration: 0.4)
-                            .repeatForever(autoreverses: true)
-                            .delay(Double(index) * 0.15),
-                            value: isAnimating
-                        )
+            // Dots bubble — TimelineView drives 800ms keyframe cycle
+            TimelineView(.animation) { timeline in
+                let phase = timeline.date.timeIntervalSinceReferenceDate
+                    .truncatingRemainder(dividingBy: 0.8)
+                HStack(spacing: 5) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle()
+                            .fill(theme.mutedForeground)
+                            .frame(width: 6, height: 6)
+                            .offset(y: Self.dotOffset(phase: phase, stagger: Double(index) * 0.15))
+                    }
                 }
             }
             .padding(.horizontal, 14)
@@ -44,7 +42,15 @@ struct TypingIndicator: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
-        .onAppear { isAnimating = true }
+    }
+
+    /// Matches Android keyframe: bounce up (-6) in 200ms, back down in 200ms, idle rest of cycle.
+    private static func dotOffset(phase: Double, stagger: Double) -> CGFloat {
+        let local = phase - stagger
+        guard local > 0, local < 0.4 else { return 0 }
+        let t = local < 0.2 ? (local / 0.2) : (1.0 - (local - 0.2) / 0.2)
+        let eased = (1.0 - cos(t * .pi)) / 2.0
+        return CGFloat(-6.0 * eased)
     }
 }
 

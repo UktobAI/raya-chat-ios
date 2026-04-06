@@ -15,7 +15,7 @@ public struct RayaChatView: View {
     /// - Parameters:
     ///   - token: Bot token from the Teammates.ai dashboard.
     ///   - locale: Language — `"en"` (English) or `"ar"` (Arabic/RTL). Default: `"en"`.
-    ///   - imagePickerAdapter: Adapter for image selection. Paperclip button hidden if nil.
+    ///   - imagePickerAdapter: Adapter for image selection. Built-in PHPicker used if omitted. Pass nil to hide.
     ///   - audioRecorderAdapter: Adapter for voice recording. Mic button hidden if nil.
     ///   - onSessionStart: Called with session ID when WebSocket connects.
     ///   - onSessionEnd: Called when session ends.
@@ -41,7 +41,11 @@ public struct RayaChatView: View {
         )
         _viewModel = StateObject(wrappedValue: RayaChatViewModel(config: config))
         self.locale = locale
+        #if canImport(UIKit)
+        self.imagePickerAdapter = imagePickerAdapter ?? DefaultImagePickerAdapter()
+        #else
         self.imagePickerAdapter = imagePickerAdapter
+        #endif
         self.audioRecorderAdapter = audioRecorderAdapter
     }
 

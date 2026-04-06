@@ -31,12 +31,12 @@ struct ImagePickerPreview: View {
                             .frame(width: thumbSize, height: thumbSize)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                            // X close button — white circle with dark border
+                            // X close button — white circle with dark border (matches Android 24dp)
                             Button(action: { onRemove(index) }) {
                                 Image(systemName: "xmark")
-                                    .font(.system(size: 8, weight: .bold))
+                                    .font(.system(size: 10, weight: .bold))
                                     .foregroundColor(Color(hex: 0x333333))
-                                    .frame(width: 22, height: 22)
+                                    .frame(width: 24, height: 24)
                                     .background(Color.white)
                                     .clipShape(Circle())
                                     .overlay(Circle().stroke(Color(hex: 0x333333), lineWidth: 1.5))

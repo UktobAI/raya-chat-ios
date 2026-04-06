@@ -94,7 +94,7 @@ public func rayaThemeFrom(botConfig: BotConfigProps, locale: String) -> RayaThem
     let gradientInt = parseHexColor(gradientHex) ?? 0x0047AF
     let gradientColor = Color(hex: gradientInt)
     let isGradientDark = isDarkColor(gradientHex)
-    let gradientForeground: Color = isGradientDark ? .white : Color(hex: 0x1A1A1A)
+    let gradientForeground: Color = isGradientDark ? .white : Color(hex: 0x14161A)
 
     return RayaTheme.create(isDark: isDark, isRTL: isRTL, locale: locale, gradientColor: gradientColor, gradientForeground: gradientForeground)
 }

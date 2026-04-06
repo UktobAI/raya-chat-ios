@@ -19,7 +19,7 @@ public final class RayaChatViewController: UIHostingController<AnyView> {
     /// - Parameters:
     ///   - token: Bot token from the Teammates.ai dashboard.
     ///   - locale: Language — `"en"` or `"ar"`. Default: `"en"`.
-    ///   - imagePickerAdapter: Adapter for image selection.
+    ///   - imagePickerAdapter: Adapter for image selection. Built-in PHPicker used if omitted.
     ///   - audioRecorderAdapter: Adapter for voice recording.
     public convenience init(
         token: String,
