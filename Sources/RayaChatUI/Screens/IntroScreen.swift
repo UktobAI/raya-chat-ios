@@ -2,7 +2,7 @@ import SwiftUI
 import RayaChatCore
 
 /// Intro screen — matches Android SDK IntroScreen.kt exactly.
-/// No close button. Online badge top-right. Card overlaps gradient by 36pt.
+/// No close button. Badge left when no avatar, right when avatar present. Card overlaps gradient by 36pt.
 struct IntroScreen: View {
     let botConfig: BotConfigProps
     let sessionCloseInfo: SessionCloseInfo?
@@ -22,7 +22,7 @@ struct IntroScreen: View {
                 VStack(spacing: 0) {
                     // ── Blue gradient header area ──
                     VStack(alignment: .leading, spacing: 0) {
-                        // Top row: avatar left, online badge right
+                        // Top row: SpaceBetween — avatar left + badge right, or just badge left
                         HStack {
                             // Avatar — only shown if configured
                             if let url = avatarUrl, let imageUrl = URL(string: url) {
@@ -40,11 +40,10 @@ struct IntroScreen: View {
                                     .frame(width: 36, height: 36)
                                     .clipShape(Circle())
                                 }
+                                Spacer()
                             }
 
-                            Spacer()
-
-                            // Online badge — white bg with border (matches Android)
+                            // Online badge — emerald green (matches Android)
                             HStack(spacing: 6) {
                                 Circle()
                                     .fill(theme.onlineDot)
@@ -124,9 +123,9 @@ struct IntroScreen: View {
                                 Text(RayaStrings.get("start_chat", locale: locale))
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(theme.gradientForeground)
-                                RayaIcons.send
-                                    .font(.system(size: 14))
-                                    .foregroundColor(theme.gradientForeground)
+                                LucideSendIcon()
+                                    .fill(theme.gradientForeground)
+                                    .frame(width: 16, height: 16)
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
@@ -175,5 +174,8 @@ struct IntroScreen: View {
             .background(theme.footerBg)
         }
         .background(theme.background)
+        .background(alignment: .top) {
+            theme.gradientColor.frame(height: 100).ignoresSafeArea(edges: .top)
+        }
     }
 }
