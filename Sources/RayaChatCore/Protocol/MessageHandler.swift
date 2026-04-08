@@ -86,8 +86,18 @@ final class MessageHandler {
 
         // Build TypeMessage from response
         let ts = responseData.createdAt ?? "\(Int(Date().timeIntervalSince1970))"
+        let content = responseData.content ?? ""
+
+        let responseId: String
+        if let rid = responseData.id, !rid.isEmpty {
+            responseId = rid
+        } else {
+            Log.w("Protocol", "RESPONSE missing id — using timestamp fallback")
+            responseId = "resp-\(ts)-\(abs(content.hashValue))"
+        }
+
         let typeMessage = TypeMessage(
-            id: responseData.id ?? UUID().uuidString,
+            id: responseId,
             sender: responseData.sender ?? 2,
             type: 1,
             content: responseData.content,

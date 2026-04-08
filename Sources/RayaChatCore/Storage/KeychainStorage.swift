@@ -57,7 +57,10 @@ final class KeychainStorage: @unchecked Sendable {
     }
 
     private func write(key: String, value: String) {
-        guard let data = value.data(using: .utf8) else { return }
+        guard let data = value.data(using: .utf8) else {
+            Log.e("Keychain", "Failed to encode value to UTF8 for key '\(key)'")
+            return
+        }
 
         // Delete existing first (upsert pattern)
         delete(key: key)
@@ -70,7 +73,10 @@ final class KeychainStorage: @unchecked Sendable {
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
         ]
 
-        SecItemAdd(query as CFDictionary, nil)
+        let status = SecItemAdd(query as CFDictionary, nil)
+        if status != errSecSuccess {
+            Log.e("Keychain", "Write failed for key '\(key)': OSStatus \(status)")
+        }
     }
 
     private func delete(key: String) {

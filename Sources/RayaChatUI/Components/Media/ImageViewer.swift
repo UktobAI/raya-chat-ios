@@ -40,6 +40,12 @@ struct ImageViewer: View {
                 .padding(.trailing, 20)
             }
             .transition(.opacity)
+            .onDisappear {
+                // Evict this image from URLCache to free memory after full-screen dismiss
+                if let request = URLRequest(url: url) as URLRequest? {
+                    URLCache.shared.removeCachedResponse(for: request)
+                }
+            }
         }
     }
 }

@@ -72,14 +72,21 @@ final class APIClient: @unchecked Sendable {
             URLQueryItem(name: "token", value: token),
             URLQueryItem(name: "agent_id", value: "null"),
             URLQueryItem(name: "chat_session_id", value: sessionId),
-            URLQueryItem(name: "user_name", value: userInfo.fullName),
-            URLQueryItem(name: "email", value: userInfo.email.lowercased()),
-            URLQueryItem(name: "phone", value: userInfo.phone),
+            URLQueryItem(name: "user_name", value: sanitizeQueryParam(userInfo.fullName)),
+            URLQueryItem(name: "email", value: sanitizeQueryParam(userInfo.email.lowercased())),
+            URLQueryItem(name: "phone", value: sanitizeQueryParam(userInfo.phone)),
             URLQueryItem(name: "data", value: metadataJson),
         ]
 
         // URLComponents auto-encodes query items
         return components.url?.absoluteString ?? ""
+    }
+
+    /// Strips control characters and null bytes from user input for safe URL query params.
+    private func sanitizeQueryParam(_ value: String) -> String {
+        value.unicodeScalars.filter { scalar in
+            scalar.value >= 32 && scalar != "\u{7F}" // Keep printable, strip control chars
+        }.map { String($0) }.joined()
     }
 
     private func getDeviceMetadata() -> DeviceMetadata {

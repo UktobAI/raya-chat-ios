@@ -13,36 +13,45 @@ final class MessageStore: @unchecked Sendable {
 
     // MARK: - Read
 
-    /// Fetches all messages ordered by insertOrder.
+    /// Fetches all messages ordered by insertOrder. Uses background context to avoid blocking main thread.
     func getAll() -> [TypeMessage] {
-        let context = stack.viewContext
-        let request = NSFetchRequest<MessageEntity>(entityName: Constants.messagesEntityName)
-        request.sortDescriptors = [NSSortDescriptor(key: "insertOrder", ascending: true)]
-
-        do {
-            let entities = try context.fetch(request)
-            return entities.map { $0.toTypeMessage() }
-        } catch {
-            print("[RayaChat.MessageStore] getAll failed: \(error)")
-            return []
+        let context = stack.backgroundContext
+        var result: [TypeMessage] = []
+        context.performAndWait {
+            let request = NSFetchRequest<MessageEntity>(entityName: Constants.messagesEntityName)
+            request.sortDescriptors = [NSSortDescriptor(key: "insertOrder", ascending: true)]
+            do {
+                let entities = try context.fetch(request)
+                result = entities.map { $0.toTypeMessage() }
+            } catch {
+                print("[RayaChat.MessageStore] getAll failed: \(error)")
+            }
         }
+        return result
     }
 
-    /// Fetches the last message by insertOrder.
+    /// Fetches the last message by insertOrder. Uses background context.
     func getLastMessage() -> TypeMessage? {
-        let context = stack.viewContext
-        let request = NSFetchRequest<MessageEntity>(entityName: Constants.messagesEntityName)
-        request.sortDescriptors = [NSSortDescriptor(key: "insertOrder", ascending: false)]
-        request.fetchLimit = 1
-
-        return (try? context.fetch(request))?.first?.toTypeMessage()
+        let context = stack.backgroundContext
+        var result: TypeMessage?
+        context.performAndWait {
+            let request = NSFetchRequest<MessageEntity>(entityName: Constants.messagesEntityName)
+            request.sortDescriptors = [NSSortDescriptor(key: "insertOrder", ascending: false)]
+            request.fetchLimit = 1
+            result = (try? context.fetch(request))?.first?.toTypeMessage()
+        }
+        return result
     }
 
-    /// Count of stored messages.
+    /// Count of stored messages. Uses background context.
     func count() -> Int {
-        let context = stack.viewContext
-        let request = NSFetchRequest<MessageEntity>(entityName: Constants.messagesEntityName)
-        return (try? context.count(for: request)) ?? 0
+        let context = stack.backgroundContext
+        var result = 0
+        context.performAndWait {
+            let request = NSFetchRequest<MessageEntity>(entityName: Constants.messagesEntityName)
+            result = (try? context.count(for: request)) ?? 0
+        }
+        return result
     }
 
     // MARK: - Write (background context)

@@ -157,13 +157,22 @@ public final class RayaChatClient: ObservableObject {
                 content: caption,
                 images: images.map { OutboundImage(name: $0.name, type: $0.type, data: $0.base64) }
             )
-            guard let data = try? self.json.encode(outbound),
-                  let jsonString = String(data: data, encoding: .utf8) else { return }
-
-            await MainActor.run {
-                let sent = self.wsManager?.send(jsonString) ?? false
-                if !sent {
-                    self.config.onError?("Message queued — reconnecting...")
+            do {
+                let data = try self.json.encode(outbound)
+                guard let jsonString = String(data: data, encoding: .utf8) else {
+                    Log.e("Client", "sendImages: UTF8 encoding failed")
+                    return
+                }
+                await MainActor.run {
+                    let sent = self.wsManager?.send(jsonString) ?? false
+                    if !sent {
+                        self.config.onError?("Message queued — reconnecting...")
+                    }
+                }
+            } catch {
+                Log.e("Client", "sendImages encoding failed: \(error)")
+                await MainActor.run {
+                    self.config.onError?("Failed to send images — encoding error")
                 }
             }
         }
@@ -358,7 +367,8 @@ public final class RayaChatClient: ObservableObject {
         lifecycleObserver.onForeground = { [weak self] duration in
             guard let self else { return }
             if duration > Constants.staleStateThreshold {
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
                     self.currentMessage = ""
                     self.loading = false
                     self.status = nil
