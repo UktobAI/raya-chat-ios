@@ -1,5 +1,6 @@
 import SwiftUI
 import RayaChatCore
+import RayaChatUI
 
 // MARK: - Nocturne Velvet Palette
 
@@ -24,6 +25,17 @@ struct HeadlessDemo: View {
     ))
 
     var imagePickerAdapter: (any ImagePickerAdapter)?
+
+    #if canImport(UIKit)
+    @State private var defaultAdapter = DefaultImagePickerAdapter()
+    #endif
+    private var effectiveAdapter: (any ImagePickerAdapter)? {
+        #if canImport(UIKit)
+        return imagePickerAdapter ?? defaultAdapter
+        #else
+        return imagePickerAdapter
+        #endif
+    }
 
     @State private var chatStarted = false
     @State private var text = ""
@@ -201,6 +213,8 @@ struct HeadlessDemo: View {
 
         return AnyView(
             HStack(alignment: .bottom, spacing: 8) {
+                if isUser { Spacer(minLength: 0) }
+
                 if !isUser {
                     ZStack {
                         Circle().fill(graphite).frame(width: 24, height: 24)
@@ -244,8 +258,6 @@ struct HeadlessDemo: View {
                     }
                 }
                 .frame(maxWidth: 300, alignment: isUser ? .trailing : .leading)
-
-                if isUser { Spacer(minLength: 0) }
             }
             .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
             .padding(.horizontal, 16)
@@ -503,7 +515,7 @@ struct HeadlessDemo: View {
             Rectangle().fill(amber.opacity(0.1)).frame(height: 0.5)
             HStack(spacing: 10) {
                 // Image picker button (only if adapter provided)
-                if imagePickerAdapter != nil {
+                if effectiveAdapter != nil {
                     Button(action: pickImages) {
                         Text("📎").font(.system(size: 18))
                             .frame(width: 36, height: 36)
@@ -557,7 +569,7 @@ struct HeadlessDemo: View {
     }
 
     private func pickImages() {
-        guard let adapter = imagePickerAdapter else { return }
+        guard let adapter = effectiveAdapter else { return }
         Task {
             let remaining = 5 - selectedImages.count
             guard remaining > 0 else { return }

@@ -5,10 +5,10 @@ import RayaChatCore
 
 /// Built-in image picker using PHPickerViewController.
 /// Converts picked images to JPEG base64 (max 1024px, 70% quality) — matches Android sample adapter.
-final class DefaultImagePickerAdapter: NSObject, ImagePickerAdapter, PHPickerViewControllerDelegate {
+public final class DefaultImagePickerAdapter: NSObject, ImagePickerAdapter, PHPickerViewControllerDelegate {
     private var continuation: CheckedContinuation<[ImageAsset], Error>?
 
-    func pickImages(maxCount: Int) async throws -> [ImageAsset] {
+    public func pickImages(maxCount: Int) async throws -> [ImageAsset] {
         try await withCheckedThrowingContinuation { cont in
             self.continuation = cont
 
@@ -31,7 +31,7 @@ final class DefaultImagePickerAdapter: NSObject, ImagePickerAdapter, PHPickerVie
 
     // MARK: - PHPickerViewControllerDelegate
 
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+    public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true)
 
         guard let cont = continuation else { return }
