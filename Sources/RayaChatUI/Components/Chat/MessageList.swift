@@ -14,7 +14,7 @@ struct MessageList<Footer: View>: View {
     var footerChangeSignal: Int = 0
 
     @State private var userScrolledUp = false
-    @State private var isProgrammaticScroll = false
+    @State private var programmaticScrollCount = 0
     @State private var scrollViewHeight: CGFloat = 0
     @State private var lastBottomY: CGFloat = 0
 
@@ -75,7 +75,7 @@ struct MessageList<Footer: View>: View {
                 .onPreferenceChange(BottomPositionKey.self) { bottomY in
                     // IGNORE position changes during programmatic auto-scroll
                     // This is the key fix — matches Android's isScrollInProgress guard
-                    guard !isProgrammaticScroll else { return }
+                    guard programmaticScrollCount == 0 else { return }
                     guard scrollViewHeight > 0 else { return }
 
                     let threshold: CGFloat = 80
@@ -98,13 +98,13 @@ struct MessageList<Footer: View>: View {
                 if userScrolledUp {
                     ScrollToBottomButton(visible: true) {
                         userScrolledUp = false
-                        isProgrammaticScroll = true
+                        programmaticScrollCount += 1
                         withAnimation {
                             proxy.scrollTo("__bottom__", anchor: .bottom)
                         }
                         // Reset flag after animation completes
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                            isProgrammaticScroll = false
+                            programmaticScrollCount = max(0, programmaticScrollCount - 1)
                         }
                     }
                     .padding(.trailing, 16)
@@ -116,28 +116,28 @@ struct MessageList<Footer: View>: View {
             // New message → animated scroll
             .onChange(of: messages.count) { _ in
                 guard !userScrolledUp else { return }
-                isProgrammaticScroll = true
+                programmaticScrollCount += 1
                 withAnimation { proxy.scrollTo("__bottom__", anchor: .bottom) }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    isProgrammaticScroll = false
+                    programmaticScrollCount = max(0, programmaticScrollCount - 1)
                 }
             }
             // Streaming → instant scroll
             .onChange(of: currentMessage) { _ in
                 guard !userScrolledUp else { return }
-                isProgrammaticScroll = true
+                programmaticScrollCount += 1
                 proxy.scrollTo("__bottom__", anchor: .bottom)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isProgrammaticScroll = false
+                    programmaticScrollCount = max(0, programmaticScrollCount - 1)
                 }
             }
             // Footer changes → instant scroll
             .onChange(of: footerChangeSignal) { _ in
                 guard !userScrolledUp else { return }
-                isProgrammaticScroll = true
+                programmaticScrollCount += 1
                 proxy.scrollTo("__bottom__", anchor: .bottom)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isProgrammaticScroll = false
+                    programmaticScrollCount = max(0, programmaticScrollCount - 1)
                 }
             }
         }

@@ -48,9 +48,12 @@ struct CountdownClose: View {
         }
         .task(id: message) {
             for _ in 0..<Constants.feedbackCountdownSeconds {
+                guard !Task.isCancelled else { return }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
                 if count > 0 { count -= 1 }
             }
+            guard !Task.isCancelled else { return }
             onComplete()
         }
     }

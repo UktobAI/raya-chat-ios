@@ -26,6 +26,8 @@ public final class RayaChatClient: ObservableObject {
     private var sessionId = ""
     private var currentUserInfo = UserInfo()
     private var cancellables = Set<AnyCancellable>()
+    private var isConnecting = false
+    private var isSessionEnding = false
 
     private let json = JSONEncoder()
 
@@ -78,6 +80,14 @@ public final class RayaChatClient: ObservableObject {
     /// - Parameter botConfig: Bot configuration — pass this so the initial bot message appears.
     @MainActor
     public func connect(userInfo: UserInfo, botConfig: BotConfigProps? = nil) async {
+        guard !isConnecting else {
+            Log.w("Client", "connect() already in progress — ignoring duplicate call")
+            return
+        }
+        isConnecting = true
+        defer { isConnecting = false }
+        isSessionEnding = false
+
         do {
             try await connectInternal(userInfo: userInfo, botConfig: botConfig)
         } catch {
@@ -213,6 +223,9 @@ public final class RayaChatClient: ObservableObject {
     /// Ends the current session — clears all storage and state.
     @MainActor
     public func endSession() async {
+        // 0. Block all delegate callbacks during teardown
+        isSessionEnding = true
+
         // 1. Destroy WebSocket + block reconnection
         wsManager?.destroy()
         wsManager = nil
@@ -410,122 +423,118 @@ extension RayaChatClient: WebSocketManagerCallbacks {
 // MARK: - MessageHandlerDelegate
 
 extension RayaChatClient: MessageHandlerDelegate {
+
+    /// Safely dispatch state update — skips if session is ending (prevents stale callbacks).
+    private func safeMainActor(_ block: @MainActor @escaping () -> Void) {
+        Task { @MainActor [weak self] in
+            guard let self, !self.isSessionEnding else { return }
+            block()
+        }
+    }
+
     func onStep(text: String?) {
         Log.d("Client", "onStep: \(text ?? "nil")")
-        Task { @MainActor in
-            loading = true
-            status = text
+        safeMainActor {
+            self.loading = true
+            self.status = text
         }
     }
 
     func onChunk(text: String) {
         Log.d("Client", "onChunk: \(text.prefix(50))")
-        Task { @MainActor in
-            currentMessage += text
-            loading = false
-            status = nil
+        safeMainActor {
+            self.currentMessage += text
+            self.loading = false
+            self.status = nil
         }
     }
 
     func onResponse(message: TypeMessage, sessionId: String?) {
         Log.i("Client", "onResponse: id=\(message.id), content=\(message.content?.prefix(50) ?? "nil"), createdAt=\(message.createdAt ?? "nil")")
-        Task { @MainActor in
-            // Finalize streaming message
-            if !currentMessage.isEmpty {
+        safeMainActor {
+            if !self.currentMessage.isEmpty {
                 let finalMsg = TypeMessage(
                     id: message.id,
                     sender: 2,
                     type: 1,
-                    content: currentMessage,
+                    content: self.currentMessage,
                     createdAt: message.createdAt
                 )
-                addMessageToState(finalMsg)
-                currentMessage = ""
+                self.addMessageToState(finalMsg)
+                self.currentMessage = ""
             } else if let content = message.content, !content.isEmpty {
-                addMessageToState(message)
+                self.addMessageToState(message)
             }
-
-            loading = false
-            status = nil
-            info = nil
+            self.loading = false
+            self.status = nil
+            self.info = nil
         }
     }
 
     func onPresets(_ newPresets: [String]) {
         Log.i("Client", "onPresets: \(newPresets)")
-        Task { @MainActor in
-            presets = newPresets
-        }
+        safeMainActor { self.presets = newPresets }
     }
 
     func onCommand(data: CommandData) {
-        Task { @MainActor in
-            presets = [] // Clear presets when command arrives — prevents stale presets flashing
-            commandData = data
-            loading = false
-            status = nil
+        safeMainActor {
+            self.presets = []
+            self.commandData = data
+            self.loading = false
+            self.status = nil
         }
     }
 
     func onError(text: String) {
-        Task { @MainActor in
+        safeMainActor {
             let errorMsg = TypeMessage(
-                id: "error-\(Int(Date().timeIntervalSince1970))-\(randomSuffix())",
-                sender: 2,
-                type: 1,
-                content: text,
+                id: "error-\(Int(Date().timeIntervalSince1970))-\(self.randomSuffix())",
+                sender: 2, type: 1, content: text,
                 createdAt: "\(Int(Date().timeIntervalSince1970))"
             )
-            addMessageToState(errorMsg)
-            loading = false
-            status = nil
-            currentMessage = ""
+            self.addMessageToState(errorMsg)
+            self.loading = false
+            self.status = nil
+            self.currentMessage = ""
         }
     }
 
     func onAutoClose(info: SessionCloseInfo) {
         Log.i("Client", "onAutoClose: \(info.message)")
-        Task { @MainActor in
-            sessionCloseInfo = info
-            presets = []
-            // Close WebSocket and block reconnection (matches Android)
-            wsManager?.destroy()
-            wsManager = nil
-            loading = false
-            status = nil
-            currentMessage = ""
+        safeMainActor {
+            self.sessionCloseInfo = info
+            self.presets = []
+            self.wsManager?.destroy()
+            self.wsManager = nil
+            self.loading = false
+            self.status = nil
+            self.currentMessage = ""
         }
     }
 
     func onEscalation(showButton: Bool) {
-        Task { @MainActor in
-            showHumanAgentBtn = showButton
-        }
+        safeMainActor { self.showHumanAgentBtn = showButton }
     }
 
     func onInfo(text: String?) {
-        Task { @MainActor in
-            info = text
-            loading = text != nil
+        safeMainActor {
+            self.info = text
+            self.loading = text != nil
         }
     }
 
     func onAgentActivity(message: TypeMessage) {
-        Task { @MainActor in
-            addMessageToState(message)
-        }
+        safeMainActor { self.addMessageToState(message) }
     }
 
     func onServerMessage(message: TypeMessage) {
-        Task { @MainActor in
-            addMessageToState(message)
-        }
+        safeMainActor { self.addMessageToState(message) }
     }
 
     func onSessionUpdate(sessionId: String) {
-        self.sessionId = sessionId
-        Task { @MainActor in
-            currentSessionId = sessionId
+        safeMainActor {
+            self.sessionId = sessionId
+            self.currentSessionId = sessionId
         }
 
         // Persist + update URL on background

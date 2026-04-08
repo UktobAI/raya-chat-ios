@@ -33,6 +33,7 @@ final class WebSocketManager: @unchecked Sendable {
     private var receiveTask: Task<Void, Never>?
 
     let messageQueue = MessageQueue()
+    private let sendLock = NSLock()
 
     private let _status = CurrentValueSubject<ConnectionStatus, Never>(.disconnected)
     var status: AnyPublisher<ConnectionStatus, Never> { _status.eraseToAnyPublisher() }
@@ -58,9 +59,12 @@ final class WebSocketManager: @unchecked Sendable {
         Log.i("WS", "→ CONNECT: \(url.prefix(100))...[token redacted]")
 
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 86400 // 24h — long-lived WebSocket
+        config.waitsForConnectivity = true
         session = URLSession(configuration: config)
         task = session?.webSocketTask(with: wsURL)
+        task?.maximumMessageSize = 5 * 1024 * 1024 // 5MB — large image payloads
         task?.resume()
 
         // Start receive loop — connection is confirmed on first successful receive
@@ -105,7 +109,12 @@ final class WebSocketManager: @unchecked Sendable {
         let logData = data.count > 500 ? "\(data.prefix(500))...[\(data.count) chars total]" : data
         Log.d("WS", "→ SEND (\(data.count) chars): \(logData)")
 
-        if _status.value == .connected, let task = self.task {
+        sendLock.lock()
+        let status = _status.value
+        let currentTask = self.task
+        sendLock.unlock()
+
+        if status == .connected, let task = currentTask {
             task.send(.string(data)) { error in
                 if let error {
                     Log.e("WS", "→ SEND error: \(error.localizedDescription)")
@@ -114,14 +123,13 @@ final class WebSocketManager: @unchecked Sendable {
             return true
         }
 
-        // Queue if connecting
-        if _status.value == .connecting {
+        if status == .connecting {
             Log.d("WS", "→ QUEUED (connecting)")
             messageQueue.enqueue(data)
             return true
         }
 
-        Log.w("WS", "→ SEND failed — not connected (status: \(_status.value))")
+        Log.w("WS", "→ SEND failed — not connected (status: \(status))")
         return false
     }
 
@@ -234,8 +242,11 @@ final class WebSocketManager: @unchecked Sendable {
         stopHeartbeat()
         heartbeatTask = Task { [weak self] in
             while !Task.isCancelled {
+                guard let self else { break }
+                guard !self.destroyed, self.isAppActive else { break }
                 try? await Task.sleep(nanoseconds: UInt64(Constants.heartbeatInterval * 1_000_000_000))
-                guard let self, !self.destroyed, self.isAppActive else { break }
+                // Re-check after sleep — manager may have been destroyed during wait
+                guard !Task.isCancelled, !self.destroyed, self.isAppActive else { break }
                 self.sendPing()
                 self.startHeartbeatTimeout()
             }

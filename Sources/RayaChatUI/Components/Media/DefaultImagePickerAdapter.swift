@@ -9,7 +9,13 @@ public final class DefaultImagePickerAdapter: NSObject, ImagePickerAdapter, PHPi
     private var continuation: CheckedContinuation<[ImageAsset], Error>?
 
     public func pickImages(maxCount: Int) async throws -> [ImageAsset] {
-        try await withCheckedThrowingContinuation { cont in
+        // Guard: if a pick is already in progress, cancel the old one
+        if let existing = continuation {
+            continuation = nil
+            existing.resume(returning: [])
+        }
+
+        return try await withCheckedThrowingContinuation { cont in
             self.continuation = cont
 
             var config = PHPickerConfiguration()
