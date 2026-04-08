@@ -13,9 +13,16 @@ struct RatingUI: View {
     @State private var selected: Int = 0
     @Environment(\.rayaTheme) private var theme
 
-    private let ratingColors: [Color] = [
-        Color(hex: 0xEF4444), Color(hex: 0xF97316), Color(hex: 0xEAB308),
-        Color(hex: 0x84CC16), Color(hex: 0x22C55E),
+    private struct RatingItem {
+        let value: Int; let label: String; let labelAr: String; let color: Color
+    }
+
+    private let ratings: [RatingItem] = [
+        RatingItem(value: 1, label: "Very Bad", labelAr: "سيء جدًا", color: Color(hex: 0xEF4444)),
+        RatingItem(value: 2, label: "Bad", labelAr: "سيء", color: Color(hex: 0xF97316)),
+        RatingItem(value: 3, label: "Okay", labelAr: "مقبول", color: Color(hex: 0xEAB308)),
+        RatingItem(value: 4, label: "Good", labelAr: "جيد", color: Color(hex: 0x84CC16)),
+        RatingItem(value: 5, label: "Excellent", labelAr: "ممتاز", color: Color(hex: 0x22C55E)),
     ]
 
     var body: some View {
@@ -27,31 +34,32 @@ struct RatingUI: View {
                     .padding(.bottom, 12)
             }
 
+            // Filter ratings by option values (matches Android's value-based filtering)
+            let isAr = locale.hasPrefix("ar")
+            let filteredRatings = ratings.filter { r in
+                options.contains { ($0.value as? Int) == r.value }
+            }
             HStack(spacing: 0) {
-                ForEach(0..<options.count, id: \.self) { index in
-                    let value = (options[index].value as? Int) ?? (index + 1)
-                    let isSelected = selected == value
-                    let color = ratingColors.indices.contains(index) ? ratingColors[index] : .yellow
+                ForEach(filteredRatings, id: \.value) { item in
+                    let isSelected = selected == item.value
 
                     Button {
-                        selected = value
-                        onRate(value)
+                        selected = item.value
+                        onRate(item.value)
                     } label: {
                         VStack(spacing: 4) {
-                            // Drawn face — circle with eyes and mouth (matches Android)
-                            FaceIcon(rating: index + 1, color: color, isSelected: isSelected)
+                            FaceIcon(rating: item.value, color: item.color, isSelected: isSelected)
                                 .frame(width: 32, height: 32)
 
-                            // Label shown when selected
                             if isSelected {
-                                Text("\(value)")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundColor(color)
+                                Text(isAr ? item.labelAr : item.label)
+                                    .font(.system(size: 9, weight: .regular))
+                                    .foregroundColor(item.color)
                             }
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
-                        .background(isSelected ? color.opacity(0.1) : Color.clear)
+                        .background(isSelected ? item.color.opacity(0.1) : Color.clear)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }

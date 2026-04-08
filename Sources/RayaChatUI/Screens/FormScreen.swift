@@ -43,7 +43,7 @@ struct FormScreen: View {
                             .fill(theme.gradientColor)
                             .frame(width: 44, height: 44)
                         Image(systemName: "person")
-                            .font(.system(size: 22, weight: .medium))
+                            .font(.system(size: 24, weight: .medium))
                             .foregroundColor(theme.gradientForeground)
                     }
                     .zIndex(1)
@@ -51,7 +51,7 @@ struct FormScreen: View {
                     // ── White card — overlaps avatar by 22pt ──
                     VStack(spacing: 0) {
                         // Welcome text — centered
-                        Text("Welcome to our live chat! Please fill in the form below before starting the chat.")
+                        Text(RayaStrings.get("welcome_form", locale: theme.locale))
                             .font(.system(size: 14))
                             .foregroundColor(theme.mutedForeground)
                             .multilineTextAlignment(.center)

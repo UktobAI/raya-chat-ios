@@ -22,10 +22,10 @@ struct CountdownClose: View {
                 Text(message)
                     .font(RayaTypography.body)
                     .foregroundColor(theme.botBubbleForeground)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 12)
             }
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 // Circular countdown — 32pt, 3pt stroke (matches Android)
                 ZStack {
                     Circle()
@@ -41,7 +41,7 @@ struct CountdownClose: View {
                         .foregroundColor(theme.botBubbleForeground)
                 }
 
-                Text("Ending session...")
+                Text(RayaStrings.get("ending_session", locale: locale))
                     .font(RayaTypography.caption)
                     .foregroundColor(theme.mutedForeground)
             }

@@ -8,7 +8,7 @@ public enum RayaTypography {
     public static let bodyBold = Font.system(size: 14, weight: .semibold)
     public static let caption = Font.system(size: 12, weight: .regular)
     public static let captionBold = Font.system(size: 12, weight: .semibold)
-    public static let input = Font.system(size: 15, weight: .regular)
-    public static let buttonSmall = Font.system(size: 13, weight: .medium)
+    public static let input = Font.system(size: 14, weight: .regular)
+    public static let buttonSmall = Font.system(size: 12, weight: .medium)
     public static let tiny = Font.system(size: 10, weight: .regular)
 }

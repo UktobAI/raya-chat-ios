@@ -112,7 +112,7 @@ struct IntroScreen: View {
                         }
 
                         // Description
-                        Text("Start a new conversation and ask me anything")
+                        Text(RayaStrings.get("start_conversation", locale: locale))
                             .font(.system(size: 14))
                             .foregroundColor(theme.mutedForeground)
 
@@ -142,7 +142,7 @@ struct IntroScreen: View {
                                 .font(.system(size: 14))
                                 .foregroundColor(theme.mutedForeground)
                                 .padding(.top, 1)
-                            Text("We respect your privacy. Your conversations are encrypted and never shared.")
+                            Text(RayaStrings.get("privacy_note", locale: locale))
                                 .font(.system(size: 11))
                                 .foregroundColor(theme.mutedForeground)
                                 .lineSpacing(2)
@@ -161,23 +161,18 @@ struct IntroScreen: View {
                 }
             }
 
-            // ── Footer — full-width bar, clickable → teammates.ai ──
+            // ── Footer — full-width bar, clickable → teammates.ai (matches Android) ──
             Button {
                 if let url = URL(string: "https://teammates.ai") {
                     openURL(url)
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Text(RayaStrings.get("powered_by", locale: locale))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(theme.footerText)
-                    Text(RayaStrings.get("teammates", locale: locale))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(theme.footerText)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(theme.footerBg)
+                Text(RayaStrings.get("powered_by", locale: locale) + RayaStrings.get("teammates", locale: locale))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(theme.footerText)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(theme.footerBg)
             }
         }
         .background(theme.background)

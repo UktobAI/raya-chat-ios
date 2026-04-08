@@ -18,12 +18,12 @@ struct FeedbackInput: View {
                 Text(message)
                     .font(RayaTypography.body)
                     .foregroundColor(theme.botBubbleForeground)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 12)
             }
 
             // Text input — min 100pt height (matches Android heightIn(min = 100.dp))
             TextEditor(text: $feedback)
-                .font(RayaTypography.body)
+                .font(RayaTypography.input)
                 .foregroundColor(theme.foreground)
                 .frame(minHeight: 100)
                 .padding(8)
@@ -35,7 +35,7 @@ struct FeedbackInput: View {
                 )
                 .overlay(alignment: .topLeading) {
                     if feedback.isEmpty {
-                        Text(RayaStrings.get("feedback_placeholder", locale: locale))
+                        Text(RayaStrings.get("type_message", locale: locale))
                             .font(RayaTypography.body)
                             .foregroundColor(theme.mutedForeground)
                             .padding(.horizontal, 12)
@@ -53,7 +53,7 @@ struct FeedbackInput: View {
             // Counter + buttons row (matches Android Row with SpaceBetween)
             HStack {
                 // Counter — "X/200 characters" (matches Android format)
-                Text("\(feedback.count)/\(Constants.maxFeedbackLength) characters")
+                Text("\(feedback.count)/\(Constants.maxFeedbackLength) \(RayaStrings.get("characters", locale: locale))")
                     .font(RayaTypography.caption)
                     .foregroundColor(theme.mutedForeground)
 

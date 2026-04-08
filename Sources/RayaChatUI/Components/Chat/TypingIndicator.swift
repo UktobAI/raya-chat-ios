@@ -44,13 +44,12 @@ struct TypingIndicator: View {
         .padding(.bottom, 8)
     }
 
-    /// Matches Android keyframe: bounce up (-6) in 200ms, back down in 200ms, idle rest of cycle.
+    /// Matches Android keyframe: linear bounce up (-6) in 200ms, back down in 200ms, idle rest of cycle.
     private static func dotOffset(phase: Double, stagger: Double) -> CGFloat {
         let local = phase - stagger
         guard local > 0, local < 0.4 else { return 0 }
         let t = local < 0.2 ? (local / 0.2) : (1.0 - (local - 0.2) / 0.2)
-        let eased = (1.0 - cos(t * .pi)) / 2.0
-        return CGFloat(-6.0 * eased)
+        return CGFloat(-6.0 * t)
     }
 }
 
