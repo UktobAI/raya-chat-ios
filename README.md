@@ -2,13 +2,43 @@
 
 Native iOS SDK for embedding the Raya AI chat widget in iOS apps. Built with Swift + SwiftUI. **Zero third-party dependencies.**
 
-Works with **SwiftUI**, **UIKit + Storyboard**, **Sheet/Modal**, and **headless (custom UI)**.
+Works with **SwiftUI**, **UIKit + Storyboard**, **Sheet/Modal**, and **Headless (custom UI)**.
+
+---
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Which Mode Should I Use?](#which-mode-should-i-use)
+- [Quick Start](#quick-start)
+  - [Mode 1: SwiftUI View](#mode-1-swiftui-view)
+  - [Mode 2: UIKit ViewController](#mode-2-uikit-viewcontroller)
+  - [Mode 3: Sheet / Modal](#mode-3-sheet--modal)
+  - [Mode 4: Headless (Custom UI)](#mode-4-headless-custom-ui)
+- [Configuration](#configuration)
+- [Callbacks](#callbacks)
+- [What Packaged UI Handles for You](#what-packaged-ui-handles-for-you)
+- [Adapters](#adapters)
+- [Features](#features)
+- [Theming](#theming)
+- [RTL / Arabic Support](#rtl--arabic-support)
+- [Headless Mode — Full Guide](#headless-mode--full-guide)
+- [Exporting Session Data (onSessionEnd)](#exporting-session-data-onsessionend)
+- [Session Persistence](#session-persistence)
+- [Background / Foreground Behavior](#background--foreground-behavior)
+- [Keeping Chat Alive Across Tabs](#keeping-chat-alive-across-tabs)
+- [Architecture](#architecture)
+- [Requirements](#requirements)
+- [Example App](#example-app)
+- [Troubleshooting](#troubleshooting)
+
+---
 
 ## Installation
 
 ### Swift Package Manager (recommended)
 
-In Xcode: **File → Add Package Dependencies** → paste:
+In Xcode: **File > Add Package Dependencies** > paste:
 
 ```
 https://github.com/teammates-ai/raya-chat-ios
@@ -25,9 +55,24 @@ pod 'RayaChat/Core', '~> 0.1.0'  # Headless only
 
 ---
 
+## Which Mode Should I Use?
+
+| Mode | Best for | You build | You get for free | Dependency |
+|------|----------|-----------|------------------|------------|
+| **1. SwiftUI View** | Modern SwiftUI apps | Nothing — drop-in | Full UI: intro, form, chat, commands, end session | `RayaChatUI` |
+| **2. UIKit VC** | UIKit/Storyboard/ObjC apps | Nothing — drop-in | Same as Mode 1, inside a UIViewController | `RayaChatUI` |
+| **3. Sheet** | Any app wanting chat as overlay | Nothing — one-liner | Same as Mode 1, as a bottom sheet | `RayaChatUI` |
+| **4. Headless** | Apps that need fully custom chat UI | Entire UI from scratch | WebSocket, reconnection, storage, state management | `RayaChatCore` |
+
+**Rule of thumb:** Start with Mode 1 (SwiftUI) or Mode 2 (UIKit). Only use Mode 4 if you need a completely custom design that doesn't match the built-in screens.
+
+---
+
 ## Quick Start
 
 ### Mode 1: SwiftUI View
+
+Drop-in SwiftUI View. Full chat widget with intro, form, and chat screens.
 
 ```swift
 import RayaChatUI
@@ -37,7 +82,11 @@ struct SupportView: View {
         RayaChatView(
             token: "your-bot-token",
             locale: "en",
-            onSessionStart: { id in print("Session: \(id)") },
+            onSessionStart: { sessionId in print("Session: \(sessionId)") },
+            onSessionEnd: { sessionId, messages in
+                // Full message history with remote attachment URLs
+                print("Session \(sessionId) ended with \(messages.count) messages")
+            },
             onError: { err in print("Error: \(err)") },
             onClose: { /* dismiss */ }
         )
@@ -45,25 +94,42 @@ struct SupportView: View {
 }
 ```
 
+That's it. The widget handles everything: fetching bot config, showing the intro screen, user form, chat, commands, end session, and reconnection.
+
 ### Mode 2: UIKit ViewController
+
+For apps using UIKit, Storyboards, or Objective-C. The ViewController wraps SwiftUI internally — your app does **not** need SwiftUI knowledge.
 
 ```swift
 import RayaChatUI
+import RayaChatCore
 
-let chatVC = RayaChatViewController(token: "your-bot-token", locale: "en")
-chatVC.onSessionStart = { id in print("Session: \(id)") }
-chatVC.onClose = { self.dismiss(animated: true) }
+let chatVC = RayaChatViewController(
+    token: "your-bot-token",
+    locale: "en",
+    onSessionStart: { sessionId in print("Session: \(sessionId)") },
+    onSessionEnd: { sessionId, messages in
+        print("Session \(sessionId) ended with \(messages.count) messages")
+    },
+    onError: { err in print("Error: \(err)") },
+    onClose: { self.dismiss(animated: true) }
+)
 
 // Push, present, or embed — it's a standard UIViewController
 navigationController?.pushViewController(chatVC, animated: true)
 ```
 
-### Mode 3: Sheet
+### Mode 3: Sheet / Modal
+
+Chat slides up from the bottom as a sheet. Works with SwiftUI apps.
 
 ```swift
 .sheet(isPresented: $showChat) {
     RayaChatView(
         token: "your-bot-token",
+        onSessionEnd: { sessionId, messages in
+            print("Session \(sessionId) ended with \(messages.count) messages")
+        },
         onClose: { showChat = false }
     )
     .presentationDetents([.large])
@@ -72,6 +138,8 @@ navigationController?.pushViewController(chatVC, animated: true)
 
 ### Mode 4: Headless (Custom UI)
 
+Full control — all chat logic with zero pre-built UI. Build your own screens with Combine `@Published`.
+
 ```swift
 import RayaChatCore
 
@@ -79,104 +147,618 @@ let client = RayaChatClient(config: RayaChatConfig(
     token: "your-bot-token",
     locale: "en",
     onSessionStart: { id in print("Session: \(id)") },
+    onSessionEnd: { sessionId, messages in
+        print("Session \(sessionId) ended with \(messages.count) messages")
+    },
     onError: { err in print("Error: \(err)") }
 ))
 
 // Fetch config + connect
 Task {
     let botConfig = await client.fetchBotConfig()
-    await client.connect(userInfo: UserInfo("John", "john@test.com", ""), botConfig: botConfig)
+    await client.connect(
+        userInfo: UserInfo(fullName: "John", email: "john@test.com", phone: ""),
+        botConfig: botConfig
+    )
 }
 
 // Observe state via Combine @Published
 client.$messages       // [TypeMessage]
+client.$currentMessage // String (streaming text)
 client.$loading        // Bool
 client.$presets        // [String]
 client.$commandData    // CommandData?
 
-// Actions
+// Send messages
 client.sendMessage("Hello")
 client.sendPreset("Ask about pricing")
 client.sendImages(imagePayloads, caption: "Check these out")
 client.sendCommandResponse(command: "rate_conversation", response: 5)
-client.endSession()
+await client.endSession()
 client.destroy()
 ```
+
+> **Full headless guide:** See [Headless Mode — Full Guide](#headless-mode--full-guide) below for all state fields, actions, command handling, and streaming.
+
+---
+
+## Configuration
+
+All 4 modes accept the same configuration parameters. In packaged UI modes (1-3), pass them as function parameters. In headless mode (4), pass them via `RayaChatConfig`.
+
+| Param | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `token` | `String` | **Yes** | — | Bot token from [Teammates.ai](https://teammates.ai) dashboard |
+| `locale` | `String` | No | `"en"` | `"en"` (English) or `"ar"` (Arabic with RTL layout) |
+| `imagePickerAdapter` | `ImagePickerAdapter?` | No | Built-in PHPicker | Adapter for image selection. Pass `nil` to hide image button. |
+| `audioRecorderAdapter` | `AudioRecorderAdapter?` | No | `nil` | Adapter for voice recording. Mic button hidden if not provided. |
+| `onSessionStart` | `(String) -> Void` | No | `nil` | Called when WebSocket connects successfully |
+| `onSessionEnd` | `(String, [TypeMessage]) -> Void` | No | `nil` | Called when session ends — passes session ID and full message history |
+| `onError` | `(String) -> Void` | No | `nil` | Called on connection or send errors |
+| `onClose` | `() -> Void` | No | `nil` | Called when user taps the close (X) button |
+
+### Bot Configuration (from API)
+
+These are configured on the [Teammates.ai](https://teammates.ai) dashboard and fetched automatically by the SDK. You do **not** set these in code.
+
+| Property | Controls |
+|----------|----------|
+| `theme` | `"light"` or `"dark"` mode |
+| `chatbox_gradient_color` | Primary/brand color (header, buttons, user bubbles) |
+| `chatbox_chat_icon` | Bot avatar image URL |
+| `chatbox_system_heading` | Intro screen heading text |
+| `chatbox_system_paragraph` | Intro screen subtitle |
+| `chatbox_initial_msg` | First bot message when chat starts |
+| `chatbox_placeholder` | Message input placeholder text |
+| `enable_user_form` | Show/skip user info form before chat |
+| `enable_user_email` | Show email field in the form |
+| `enable_user_phone` | Show phone field in the form |
+| `enable_voice_note` | Enable microphone button (still requires adapter) |
+| `enable_image_upload` | Enable image upload button |
+| `preset_options` | Static suggestion buttons shown on first message |
+
+---
+
+## Callbacks
+
+All callbacks are optional. They fire in all modes (packaged UI and headless).
+
+### `onSessionStart(_ sessionId: String)`
+
+Fires when the WebSocket connection is established. The `sessionId` is assigned by the server and identifies this conversation.
+
+```swift
+onSessionStart: { sessionId in
+    Analytics.track("chat_started", ["session_id": sessionId])
+}
+```
+
+### `onSessionEnd(_ sessionId: String, _ messages: [TypeMessage])`
+
+Fires when the session ends. Receives the session ID and **complete message history** captured before state is cleared. This fires regardless of how the session ends:
+
+- User confirms "End Session" in the modal
+- Server sends `feedback_received` -> countdown finishes -> session ends
+- Server sends `auto_close` (inactivity timeout)
+- Developer calls `client.endSession()` in headless mode
+
+```swift
+onSessionEnd: { sessionId, messages in
+    // Export transcript, send to your API, log analytics, etc.
+    print("Session \(sessionId): \(messages.count) messages")
+}
+```
+
+See [Exporting Session Data](#exporting-session-data-onsessionend) for a full example.
+
+### `onError(_ error: String)`
+
+Fires on connection failures, send failures, or server errors. Error messages are sanitized (HTML stripped, sensitive data redacted, max 200 chars).
+
+```swift
+onError: { error in
+    showAlert(error)
+}
+```
+
+### `onClose()`
+
+Fires when the user taps the close (X) button in the header. Use this to dismiss the chat view.
+
+```swift
+onClose: { dismiss() }  // or navigationController?.popViewController(animated: true)
+```
+
+---
+
+## What Packaged UI Handles for You
+
+When you use Mode 1, 2, or 3, the SDK handles all of the following automatically. You do **not** need to build or manage any of this:
+
+| Feature | Details |
+|---------|---------|
+| **Intro screen** | Bot avatar, heading, subtitle, "Start a chat" button, privacy note, powered-by footer |
+| **User form** | Full name (required), email (optional), phone (optional), validation, error messages |
+| **Chat screen** | Message list, typing indicator, streaming responses, markdown rendering, timestamps |
+| **Message composer** | Text input, emoji (system keyboard), image button, mic button, send button |
+| **Bot config fetch** | Fetches theme, colors, form settings, initial message from API on launch |
+| **Theme** | Light/dark mode, gradient colors, contrast text — all from bot config |
+| **Commands** | Rating (5 faces), feedback (textarea), end session (yes/no), countdown timer, auto-close |
+| **End chat modal** | Confirmation dialog with cancel/end buttons |
+| **Image handling** | Built-in PHPicker, preview grid with remove buttons, full-screen viewer on tap |
+| **Audio handling** | Recording waveform, playback bar (requires adapters) |
+| **Preset buttons** | Dynamic suggestion pills from server + static presets from config |
+| **Escalation** | "Connect with human representative" button when server triggers it |
+| **Keyboard** | Dismiss on tap outside, dismiss on send, dismiss on preset selection |
+| **Auto-scroll** | Scrolls to latest message; floating "scroll to bottom" button when scrolled up |
+| **RTL** | Full Arabic layout, mirrored bubbles, translated strings (when `locale = "ar"`) |
+| **Reconnection** | Exponential backoff, message queue, session resume — all invisible to the user |
+| **Persistence** | Messages and session ID survive app restart |
+
+---
+
+## Adapters
+
+The SDK uses **pluggable adapters** for native device features (camera, microphone). The image picker is provided automatically; audio adapters are optional.
+
+| Adapters provided | Buttons shown in composer |
+|-------------------|--------------------------|
+| Default (no custom adapters) | Emoji + Image + Send |
+| `imagePickerAdapter: nil` | Emoji + Send only |
+| `audioRecorderAdapter` provided | Emoji + Image + Mic + Send |
+
+### ImagePickerAdapter
+
+A built-in `DefaultImagePickerAdapter` using `PHPickerViewController` is provided automatically. Images are resized to max 1024px and compressed to JPEG at 70% quality.
+
+To provide a custom implementation:
+
+```swift
+public protocol ImagePickerAdapter: AnyObject {
+    func pickImages(maxCount: Int) async throws -> [ImageAsset]
+}
+```
+
+`ImageAsset` fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `uri` | `String` | Data URI for local display |
+| `name` | `String` | Filename, e.g., `"photo.jpg"` |
+| `type` | `String` | MIME type, e.g., `"image/jpeg"` |
+| `base64` | `String` | Full data URL: `"data:image/jpeg;base64,/9j/4AAQ..."` |
+
+### AudioRecorderAdapter
+
+```swift
+public protocol AudioRecorderAdapter: AnyObject {
+    func startRecording() async throws
+    func stopRecording() async throws -> AudioResult  // { uri: String, base64: String? }
+    func pauseRecording() async throws
+    func resumeRecording() async throws
+    func getAmplitude() async -> Float                 // 0..1 for waveform visualization
+    func cleanup() async                               // release resources
+}
+```
+
+### AudioPlayerAdapter
+
+```swift
+public protocol AudioPlayerAdapter: AnyObject {
+    func loadAudio(uri: String) async throws -> AudioInfo  // { durationMs: Int64 }
+    func play() async throws
+    func pause() async throws
+    func seekTo(positionMs: Int64) async throws
+    func getPosition() async -> Int64
+    func cleanup() async
+}
+```
+
+---
+
+## Features
+
+### Chat
+- Real-time text messaging via WebSocket
+- Streaming bot responses (chunks rendered as they arrive)
+- Markdown rendering in bot messages (bold, italic, code, links — native `AttributedString`)
+- Message persistence across app restarts (Core Data, up to 500 messages)
+- Auto-scroll to latest message
+
+### Media
+- Image upload (up to 5 per message) with preview grid and remove buttons
+- Full-screen image viewer on tap
+- Voice note recording with waveform visualization (requires adapter)
+- Voice note playback with progress bar
+
+### Interactive
+- Preset/suggestion buttons (static from config + dynamic from server)
+- Server command system: rating, feedback, end session, countdown, auto-close
+- End chat confirmation modal
+- Escalation to human agent button
+- Emoji via system keyboard
+
+### Connection
+- WebSocket heartbeat (ping every 25s, timeout after 60s)
+- Automatic reconnection with exponential backoff (max 100 attempts, 30s cap)
+- Message queue during reconnection (messages sent while connecting are queued and flushed on open)
+- Session ID persistence — reconnection resumes the same conversation
+- App background/foreground awareness (stops heartbeat when backgrounded, reconnects on foreground)
+- Online/offline detection via `NWPathMonitor`
+
+---
+
+## Theming
+
+The SDK automatically fetches theme settings from your bot configuration. No manual setup needed.
+
+**How it works:**
+
+1. `theme: "light" | "dark"` — controls background, cards, borders, and text colors
+2. `chatbox_gradient_color` — controls header, buttons, and user message bubbles
+3. Text on the gradient **automatically adapts**: white text on dark gradients, dark text on light gradients
+
+These two settings are independent. A dark theme can have a light gradient color and vice versa.
+
+**Dark mode colors:**
+
+| Element | Color |
+|---------|-------|
+| Background | `#14161A` |
+| Cards/Bubbles | `#2C2D31` |
+| Borders | `#3F3F46` |
+| Text | `#FAFAFA` |
+
+**Light mode colors:**
+
+| Element | Color |
+|---------|-------|
+| Background | `#FFFFFF` |
+| Bot bubbles | `#F5F5F5` |
+| Borders | `#E4E4E7` |
+| Text | `#14161A` |
+
+---
+
+## RTL / Arabic Support
+
+Set `locale: "ar"` — the entire UI adapts automatically:
+
+- All text right-aligned
+- Message bubbles mirrored (user left, bot right)
+- Navigation arrows flipped
+- Arabic translations for all built-in strings (form labels, buttons, errors, placeholders)
+- Per-message language detection for mixed-language chats
+- **No global mutation** — the SDK does NOT change your app's `layoutDirection` or any global iOS setting. RTL is scoped entirely within the SDK's views.
 
 ---
 
 ## Headless Mode — Full Guide
 
+Headless mode gives you the complete chat engine (`RayaChatClient`) with all state exposed as Combine `@Published` properties. You build the entire UI yourself — the SDK handles WebSocket, reconnection, persistence, commands, and state management.
+
 ### All State (@Published)
+
+Observe these in your UI to react to changes:
 
 | State | Type | Description |
 |-------|------|-------------|
-| `messages` | `[TypeMessage]` | Full message history |
-| `currentMessage` | `String` | Streaming text (grows as chunks arrive) |
+| `messages` | `[TypeMessage]` | Full message history (persisted across app restarts). Image/audio attachments are updated with remote URLs once the server processes them. |
+| `currentMessage` | `String` | Streaming text — grows as chunks arrive, cleared on RESPONSE |
 | `connectionStatus` | `ConnectionStatus` | `.connecting`, `.connected`, `.disconnected`, `.reconnecting` |
-| `isConnected` | `Bool` | WebSocket is open |
+| `isConnected` | `Bool` | WebSocket is open and healthy |
 | `isOnline` | `Bool` | Device has network connectivity |
-| `loading` | `Bool` | Bot is processing |
-| `status` | `String?` | "Searching...", "Thinking..." |
-| `info` | `String?` | "Waiting for human agent..." |
-| `commandData` | `CommandData?` | Active server command |
-| `presets` | `[String]` | Suggestion buttons |
-| `showHumanAgentBtn` | `Bool` | Escalation available |
-| `sessionCloseInfo` | `SessionCloseInfo?` | Session closed by server |
-| `currentSessionId` | `String` | Current session ID |
+| `loading` | `Bool` | Bot is processing (STEP received, cleared on RESPONSE) |
+| `status` | `String?` | Status text from server: "Searching...", "Thinking..." |
+| `info` | `String?` | Info text: "Waiting for human agent..." |
+| `commandData` | `CommandData?` | Active server command — see [Handling Commands](#handling-commands) |
+| `presets` | `[String]` | Suggestion button titles from server |
+| `showHumanAgentBtn` | `Bool` | Escalation to human agent is available |
+| `sessionCloseInfo` | `SessionCloseInfo?` | Non-nil when server closed the session (auto_close) |
+| `currentSessionId` | `String` | Server-assigned session ID (empty before first response) |
 
 ### All Actions
 
-| Action | Signature | Description |
-|--------|-----------|-------------|
-| `connect` | `func connect(userInfo:, botConfig:) async` | Start WebSocket |
-| `sendMessage` | `func sendMessage(_ text:)` | Send text |
-| `sendImages` | `func sendImages(_ images:, caption:)` | Send images with caption |
-| `sendAudio` | `func sendAudio(_ base64:)` | Send voice note |
-| `sendPreset` | `func sendPreset(_ text:)` | Send preset + clear buttons |
-| `sendCommandResponse` | `func sendCommandResponse(command:, response:)` | Respond to commands |
-| `clearSessionCloseInfo` | `func clearSessionCloseInfo()` | Reset auto_close warning |
-| `endSession` | `func endSession() async` | End session, clear storage |
-| `destroy` | `func destroy()` | Release all resources |
-| `fetchBotConfig` | `func fetchBotConfig() async` | Fetch bot configuration |
+| Action | Signature | When to call |
+|--------|-----------|--------------|
+| `connect` | `func connect(userInfo:, botConfig:) async` | After user submits form (or with empty `UserInfo` to skip form) |
+| `fetchBotConfig` | `func fetchBotConfig() async -> BotConfigProps` | Before `connect()` — needed for initial bot message |
+| `sendMessage` | `func sendMessage(_ text:)` | User taps send button |
+| `sendImages` | `func sendImages(_ images:, caption:)` | User sends images |
+| `sendAudio` | `func sendAudio(_ base64:)` | User sends voice note |
+| `sendPreset` | `func sendPreset(_ text:)` | User taps a suggestion button |
+| `sendCommandResponse` | `func sendCommandResponse(command:, response:)` | User responds to a command (rating, feedback, etc.) |
+| `clearSessionCloseInfo` | `func clearSessionCloseInfo()` | When starting a new chat after auto_close |
+| `endSession` | `func endSession() async` | User wants to end the session (clears all storage) |
+| `destroy` | `func destroy()` | View disappears / ViewController deinit |
 
-### endSession vs destroy
+### Lifecycle: endSession vs destroy
 
-| Method | Clears storage? | Closes WebSocket? | Resets UI? | When to call |
-|--------|----------------|-------------------|-----------|-------------|
-| `endSession()` | Yes | Yes | Yes → Intro | User taps "End Session" |
-| `destroy()` | No | Yes | N/A | View disappears / ViewController dealloc |
+| Method | Clears storage? | Closes WebSocket? | Fires `onSessionEnd`? | When to call |
+|--------|----------------|-------------------|----------------------|-------------|
+| `endSession()` | **Yes** — deletes messages, session ID, user info | Yes | **Yes** — with session ID + messages | User taps "End Session" |
+| `destroy()` | **No** — messages and session persist for resume | Yes | No | View disappears / deinit |
+
+> `endSession()` snapshots the session ID and messages **before** clearing, then passes both to `onSessionEnd`. This is safe even when triggered by a server command.
+
+### Handling Streaming Messages
+
+The bot sends responses in chunks. Here's the typical sequence:
+
+```
+Server: STEP     { text: "Searching..." }     -> loading = true, status = "Searching..."
+Server: CHUNK    { text: "Here are " }         -> currentMessage = "Here are "
+Server: CHUNK    { text: "the results" }       -> currentMessage = "Here are the results"
+Server: RESPONSE { data: { content: ... } }    -> message added to messages, currentMessage = "", loading = false
+```
+
+In your UI, render `currentMessage` as a temporary bot bubble at the bottom of the list:
+
+```swift
+struct ChatScreen: View {
+    @ObservedObject var client: RayaChatClient
+
+    var body: some View {
+        ScrollView {
+            LazyVStack {
+                // Render finalized messages
+                ForEach(client.messages) { msg in
+                    MessageBubble(message: msg)
+                }
+
+                // Show streaming bot response (temporary — disappears when RESPONSE arrives)
+                if !client.currentMessage.isEmpty {
+                    BotBubble(text: client.currentMessage)
+                }
+
+                // Show typing indicator while waiting for first chunk
+                if client.loading && client.currentMessage.isEmpty {
+                    TypingIndicator()
+                }
+            }
+        }
+    }
+}
+```
+
+### Handling Commands
+
+The server sends commands for interactive UI (rating, feedback, end session). When `commandData` is non-nil, you should:
+
+1. Show the appropriate UI (disable the message composer)
+2. Collect the user's response
+3. Call `sendCommandResponse(command:, response:)`
+
+```swift
+if let cmd = client.commandData {
+    switch cmd.content {
+    case "rate_conversation":
+        // Show 5 rating icons (1-5). cmd.message = "How would you rate this conversation?"
+        // cmd.options = [1, 2, 3, 4, 5]
+        RatingUI(message: cmd.message, onRate: { rating in
+            client.sendCommandResponse(command: "rate_conversation", response: rating)
+        })
+
+    case "submit_feedback":
+        // Show textarea + Skip/Submit buttons. cmd.message = "Any feedback?"
+        FeedbackUI(message: cmd.message, optional: cmd.optional, onSubmit: { text in
+            client.sendCommandResponse(command: "submit_feedback", response: text)
+        })
+
+    case "end_session":
+        // Show Yes/No buttons. cmd.message = "Do you want to end this session?"
+        EndSessionUI(message: cmd.message, onConfirm: {
+            client.sendCommandResponse(command: "end_session", response: "yes")
+        })
+
+    case "feedback_received":
+        // Show countdown (3 seconds), then call endSession()
+        CountdownUI(message: cmd.message, onComplete: {
+            Task { await client.endSession() }
+        })
+
+    default: break
+    }
+}
+```
+
+**Command flow (typical):**
+
+```
+end_session -> user picks Yes/No
+    -> if Yes: rate_conversation -> user rates 1-5
+        -> submit_feedback -> user types feedback or skips
+            -> feedback_received -> 3s countdown -> endSession()
+```
+
+---
+
+## Exporting Session Data (onSessionEnd)
+
+The `onSessionEnd` callback receives the session ID and full message history, captured before state is cleared. This works in all modes and fires regardless of how the session ends.
+
+### Packaged UI example
+
+```swift
+struct SupportScreen: View {
+    let customerId: String
+    let rideId: String
+
+    var body: some View {
+        RayaChatView(
+            token: "your-bot-token",
+            onSessionEnd: { sessionId, messages in
+                Task {
+                    await api.post("/support/sessions", body: [
+                        "customer_id": customerId,
+                        "ride_id": rideId,
+                        "session_id": sessionId,
+                        "message_count": messages.count,
+                        "transcript": messages.map { msg in
+                            [
+                                "sender": msg.sender == 1 ? "user" : "bot",
+                                "content": msg.content ?? "",
+                                "timestamp": msg.createdAt ?? "",
+                                "attachments_json": msg.attachmentsJson ?? "",
+                                "audio_json": msg.audioJson ?? "",
+                            ]
+                        },
+                    ])
+                }
+            },
+            onClose: { /* dismiss */ }
+        )
+    }
+}
+```
+
+### What `onSessionEnd` receives
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sessionId` | `String` | The server-assigned session ID (empty string if session never connected) |
+| `messages` | `[TypeMessage]` | Complete message history at the moment the session ended |
+
+Each `TypeMessage` contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `String` | Unique message ID |
+| `sender` | `Int` | `1` = user, `2` = bot/agent |
+| `type` | `Int` | `1` = text, `2` = audio, `3` = image, `4` = agent_activity |
+| `content` | `String?` | Message text (may contain markdown for bot messages) |
+| `createdAt` | `String?` | Unix timestamp in seconds |
+| `attachmentsJson` | `String?` | JSON array of image attachments with **remote URLs** (safe to store in your DB) |
+| `audioJson` | `String?` | JSON audio data with **remote URL** (safe to store in your DB) |
+
+> **Image/audio URLs are server URLs, not local paths.** When the user sends images or audio, the SDK initially stores local data URIs. Once the server processes the upload and responds, the SDK automatically replaces them with permanent remote URLs (e.g., `https://s3.amazonaws.com/...`). By the time `onSessionEnd` fires, all attachments contain remote URLs that can be stored in your database or accessed from any device.
+
+---
+
+## Session Persistence
+
+The SDK persists data so conversations survive app restarts:
+
+| Data | Storage | Encrypted |
+|------|---------|-----------|
+| Session ID | Keychain | Yes (Secure Enclave) |
+| User info | Keychain | Yes (Secure Enclave) |
+| Messages (up to 500) | Core Data (SQLite) | App sandbox |
+
+**How it works:**
+
+1. User chats, messages are saved to Core Data on every send/receive
+2. User kills the app or the OS kills the process
+3. User reopens the app and taps "Start a chat"
+4. SDK reads stored session ID and messages from storage
+5. WebSocket connects with the stored session ID — server resumes the conversation
+6. Previous messages appear immediately in the chat
+
+**When data is cleared:**
+
+- `endSession()` — clears everything (session ID, messages, user info)
+- `destroy()` — does **not** clear storage (data survives for session resume)
+
+---
+
+## Background / Foreground Behavior
+
+| Duration in background | What happens on return |
+|-----------------------|------------------------|
+| < 60 seconds | WebSocket likely survived. Returns seamlessly. |
+| 1-5 minutes | WebSocket may have died. SDK auto-reconnects with same session. |
+| 5+ minutes | WebSocket dead. Stale streaming state cleared. SDK auto-reconnects with saved session ID. |
+| App killed by OS | Everything in memory lost. Keychain + Core Data survive. User taps "Start Chat" -> messages restored. |
+
+The SDK uses `NotificationCenter` to detect foreground/background transitions (`UIApplication.didBecomeActiveNotification` / `willResignActiveNotification`). When backgrounded, it stops the heartbeat to save battery. When foregrounded, it reconnects if needed and clears any stale streaming state.
+
+---
+
+## Keeping Chat Alive Across Tabs
+
+If your app has tab navigation, keep the chat view mounted — hide it visually instead of removing it:
+
+```swift
+// Correct — stays mounted, preserves chat state
+TabView(selection: $activeTab) {
+    HomeView().tag("home")
+    RayaChatView(token: "...").tag("support")
+}
+
+// Wrong — recreates on every tab switch
+if activeTab == "support" {
+    RayaChatView(token: "...")
+}
+```
+
+When `RayaChatView` leaves the view hierarchy, `destroy()` is called automatically (via `deinit`), which closes the WebSocket. Mounting it again starts a fresh session from the intro screen (though stored messages are restored).
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                 RayaChatCore                      │
-│                                                  │
-│  URLSession WebSocket · Heartbeat · Reconnection │
-│  Message Parser · Commands · Error Sanitizer     │
-│  Bot Config Fetch · Keychain · Core Data         │
-│  App Lifecycle · NWPathMonitor                   │
-│                                                  │
-│  → Combine @Published                            │
-│  → URLSessionWebSocketTask (built-in)            │
-│  → Core Data (messages)                          │
-│  → Keychain (session + user — Secure Enclave)    │
-│  → Zero third-party dependencies                 │
-└──────────────┬──────────────┬────────────────────┘
-               │              │
-    ┌──────────▼──────┐  ┌───▼──────────────────┐
-    │  RayaChatUI     │  │  Developer's own UI   │
-    │                 │  │                       │
-    │  Mode 1: View   │  │  Mode 4: Headless     │
-    │  Mode 2: UIKit  │  │  (SwiftUI or UIKit)   │
-    │  Mode 3: Sheet  │  │                       │
-    │                 │  │  client.$messages      │
-    │  SwiftUI        │  │  client.sendMessage()  │
-    └─────────────────┘  └───────────────────────┘
++--------------------------------------------------+
+|              RayaChatCore                         |
+|                                                  |
+|  WebSocket . Heartbeat . Reconnection . Queue    |
+|  Message Parser . Commands . Error Sanitizer     |
+|  Bot Config Fetch . Session Storage              |
+|  App Lifecycle . Network Detection               |
+|                                                  |
+|  Storage:                                        |
+|  -> Core Data (messages, max 500)                |
+|  -> Keychain (session + user, Secure Enclave)    |
+|                                                  |
+|  Swift Concurrency + Combine @Published          |
+|  URLSessionWebSocketTask (built-in)              |
+|  Zero third-party dependencies                   |
++------------------+---------------+---------------+
+                   |               |
+       +-----------v------+  +----v------------------+
+       |  RayaChatUI      |  |  Developer's own UI   |
+       |                  |  |                       |
+       |  Mode 1: View    |  |  Mode 4: Headless     |
+       |  Mode 2: UIKit   |  |  (SwiftUI or UIKit)   |
+       |  Mode 3: Sheet   |  |                       |
+       |                  |  |  client.$messages      |
+       |  SwiftUI         |  |  client.sendMessage()  |
+       +------------------+  +-----------------------+
 ```
+
+### Project Structure
+
+```
+raya-chat-ios/
+├── Sources/RayaChatCore/              # Headless engine (no UI)
+│   ├── RayaChatClient.swift           # Main entry point
+│   ├── RayaChatConfig.swift           # Configuration
+│   ├── Constants.swift                # SDK constants
+│   ├── Models/                        # 14 data models + enums
+│   ├── Adapters/                      # 3 adapter protocols
+│   ├── WebSocket/                     # WebSocket + message queue
+│   ├── API/                           # Bot config fetch + URL builder
+│   ├── Protocol/                      # Message handler (10 types)
+│   ├── Storage/                       # Core Data + Keychain
+│   ├── Lifecycle/                     # Background/foreground observer
+│   ├── Network/                       # NWPathMonitor connectivity
+│   └── Util/                          # Color, validation, time, RTL, error sanitizer
+│
+├── Sources/RayaChatUI/                # Packaged UI (SwiftUI)
+│   ├── RayaChatView.swift             # Mode 1: SwiftUI View
+│   ├── RayaChatViewController.swift   # Mode 2: UIKit bridge
+│   ├── RayaChatViewModel.swift        # State machine (INTRO -> FORM -> CHAT)
+│   ├── Screens/                       # IntroScreen, FormScreen, ChatScreen
+│   ├── Components/Chat/              # MessageBubble, Composer, Presets, Typing
+│   ├── Components/Commands/          # Rating, Feedback, EndSession, Countdown
+│   ├── Components/Media/             # ImageViewer, ImagePreview, Audio, DefaultImagePicker
+│   ├── Components/Common/            # Header, Icons, Strings, Toast
+│   └── Theme/                        # Colors, typography, RTL utils
+│
+└── Example/                           # Demo app (4 integration modes)
+```
+
+---
 
 ## Requirements
 
@@ -194,10 +776,42 @@ The `Example/` directory demonstrates all 4 integration modes:
 
 | Demo | Mode | What it shows |
 |------|------|--------------|
-| SwiftUI | Mode 1 | Full chat widget — 3 lines of code |
-| UIKit | Mode 2 | Chat in UINavigationController |
-| Sheet | Mode 3 | Chat slides up as bottom sheet |
-| Headless | Mode 4 | Nocturne Velvet custom UI with all features |
+| SwiftUIDemo | Mode 1 | Full chat widget — 3 lines of code |
+| UIKitDemo | Mode 2 | Chat in UINavigationController |
+| SheetDemo | Mode 3 | Chat slides up as bottom sheet |
+| HeadlessDemo | Mode 4 | Nocturne Velvet custom UI with all features |
+
+---
+
+## Troubleshooting
+
+### Paperclip (image) button not showing
+
+The built-in `DefaultImagePickerAdapter` is provided automatically. If you explicitly pass `imagePickerAdapter: nil`, the button is hidden. Also check that `enable_image_upload` is enabled in your bot config on the dashboard.
+
+### Keyboard doesn't dismiss
+
+Tap any blank area in the chat screen, or send a message — both dismiss the keyboard automatically. If using headless mode, you must handle keyboard dismissal in your own UI.
+
+### onSessionEnd not firing
+
+Make sure the session ends via `endSession()`. In Mode 2 (UIKit), pass `onSessionEnd` in the `init` constructor — not as a stored property after init.
+
+### Image attachments have base64 data URIs instead of remote URLs
+
+Wait for the bot to respond before ending the session. The server sends back remote S3 URLs in its response, which replace the local data URIs. If you end the session before the server responds, attachments will still have local data URIs.
+
+### WebSocket disconnects after sending a message
+
+Check your network connection. The SDK automatically reconnects with exponential backoff. If the issue persists, ensure your bot token is valid and the server is accessible.
+
+### Chat resets to intro on tab switch
+
+Keep the `RayaChatView` mounted in the view hierarchy. See [Keeping Chat Alive Across Tabs](#keeping-chat-alive-across-tabs).
+
+### Mode 2 (UIKit) callbacks not working
+
+All callbacks (`onSessionStart`, `onSessionEnd`, `onError`, `onClose`) must be passed in the `RayaChatViewController` constructor. They cannot be set as properties after init.
 
 ## License
 
