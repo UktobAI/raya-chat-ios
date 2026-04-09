@@ -45,7 +45,12 @@ struct ChatScreen: View {
                             chatIcon: chatIcon,
                             locale: locale,
                             onSendMessage: { client.sendMessage($0) },
-                            onSendPreset: { client.sendPreset($0) },
+                            onSendPreset: { preset in
+                                client.sendPreset(preset)
+                                #if canImport(UIKit)
+                                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                                #endif
+                            },
                             onSendCommandResponse: { cmd, resp in client.sendCommandResponse(command: cmd, response: resp) },
                             onEndSession: onEndSession
                         )
@@ -70,6 +75,12 @@ struct ChatScreen: View {
             .background(theme.background)
             .background(alignment: .top) {
                 theme.gradientColor.frame(height: 100).ignoresSafeArea(edges: .top)
+            }
+            .onTapGesture {
+                // Dismiss keyboard when tapping blank space
+                #if canImport(UIKit)
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                #endif
             }
 
             // Full-screen image viewer

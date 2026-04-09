@@ -120,6 +120,7 @@ struct MessageComposer: View {
             onSendMessage(text.trimmingCharacters(in: .whitespacesAndNewlines))
             text = ""
         }
+        isFocused = false // Dismiss keyboard after send
     }
 
     private func handlePickImages() {
