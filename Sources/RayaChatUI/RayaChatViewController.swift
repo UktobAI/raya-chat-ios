@@ -6,7 +6,11 @@ import RayaChatCore
 /// Mode 2: UIKit bridge — wraps `RayaChatView` in a `UIHostingController`.
 ///
 /// ```swift
-/// let vc = RayaChatViewController(token: "your-bot-token")
+/// let vc = RayaChatViewController(
+///     token: "your-bot-token",
+///     onSessionEnd: { sessionId, messages in /* POST to your API */ },
+///     onClose: { navigationController?.popViewController(animated: true) }
+/// )
 /// navigationController?.pushViewController(vc, animated: true)
 /// ```
 ///
@@ -21,32 +25,31 @@ public final class RayaChatViewController: UIHostingController<AnyView> {
     ///   - locale: Language — `"en"` or `"ar"`. Default: `"en"`.
     ///   - imagePickerAdapter: Adapter for image selection. Built-in PHPicker used if omitted.
     ///   - audioRecorderAdapter: Adapter for voice recording.
+    ///   - onSessionStart: Called with session ID when WebSocket connects.
+    ///   - onSessionEnd: Called when session ends — passes (sessionId, messages) with remote attachment URLs.
+    ///   - onError: Called on errors.
+    ///   - onClose: Called when user closes the widget.
     public convenience init(
         token: String,
         locale: String = "en",
         imagePickerAdapter: (any ImagePickerAdapter)? = nil,
-        audioRecorderAdapter: (any AudioRecorderAdapter)? = nil
+        audioRecorderAdapter: (any AudioRecorderAdapter)? = nil,
+        onSessionStart: ((String) -> Void)? = nil,
+        onSessionEnd: ((String, [TypeMessage]) -> Void)? = nil,
+        onError: ((String) -> Void)? = nil,
+        onClose: (() -> Void)? = nil
     ) {
         let view = RayaChatView(
             token: token,
             locale: locale,
             imagePickerAdapter: imagePickerAdapter,
             audioRecorderAdapter: audioRecorderAdapter,
-            onClose: nil // Set via property after init
+            onSessionStart: onSessionStart,
+            onSessionEnd: onSessionEnd,
+            onError: onError,
+            onClose: onClose
         )
         self.init(rootView: AnyView(view))
     }
-
-    /// Called when the user closes the widget. Set this before presenting.
-    public var onClose: (() -> Void)?
-
-    /// Called with session ID when WebSocket connects.
-    public var onSessionStart: ((String) -> Void)?
-
-    /// Called when session ends.
-    public var onSessionEnd: (() -> Void)?
-
-    /// Called on errors.
-    public var onError: ((String) -> Void)?
 }
 #endif

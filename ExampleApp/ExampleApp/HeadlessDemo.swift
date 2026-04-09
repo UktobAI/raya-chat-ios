@@ -19,6 +19,7 @@ struct HeadlessDemo: View {
     @StateObject private var client = RayaChatClient(config: RayaChatConfig(
         token: sampleToken,
         onSessionStart: { id in print("[Mode4] Session: \(id)") },
+        onSessionEnd: { sessionId, messages in print("[Mode4] Session ended — id: \(sessionId), \(messages.count) messages") },
         onError: { err in print("[Mode4] Error: \(err)") }
     ))
 

@@ -51,6 +51,7 @@ struct SheetDemo: View {
                 token: sampleToken,
                 locale: "en",
                 onSessionStart: { id in print("[Mode3] Session started: \(id)") },
+                onSessionEnd: { sessionId, messages in print("[Mode3] Session ended — id: \(sessionId), \(messages.count) messages") },
                 onError: { err in print("[Mode3] Error: \(err)") },
                 onClose: { showChat = false }
             )

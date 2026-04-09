@@ -70,12 +70,16 @@ public struct ChatResponseData: Codable, Sendable {
     public let sender: Int?
     public let content: String?
     public let createdAt: String? // Stored as string, decoded from either string or number
+    public let attachments: [String]?
+    public let attachmentType: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case chatSessionId = "chat_session_id"
         case sender, content
         case createdAt = "created_at"
+        case attachments
+        case attachmentType = "attachment_type"
     }
 
     public init(from decoder: Decoder) throws {
@@ -84,6 +88,8 @@ public struct ChatResponseData: Codable, Sendable {
         chatSessionId = try container.decodeIfPresent(String.self, forKey: .chatSessionId)
         sender = try? container.decodeIfPresent(Int.self, forKey: .sender)
         content = try container.decodeIfPresent(String.self, forKey: .content)
+        attachments = try? container.decodeIfPresent([String].self, forKey: .attachments)
+        attachmentType = try? container.decodeIfPresent(String.self, forKey: .attachmentType)
 
         // created_at: server sends as Long (number) — Android uses Long, we convert to String
         if let intValue = try? container.decodeIfPresent(Int64.self, forKey: .createdAt) {

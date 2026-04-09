@@ -18,10 +18,14 @@ struct UIKitDemoRepresentable: UIViewControllerRepresentable {
     let onClose: () -> Void
 
     func makeUIViewController(context: Context) -> UINavigationController {
-        let chatVC = RayaChatViewController(token: sampleToken, locale: "en")
-        chatVC.onSessionStart = { id in print("[Mode2] Session started: \(id)") }
-        chatVC.onError = { err in print("[Mode2] Error: \(err)") }
-        chatVC.onClose = onClose
+        let chatVC = RayaChatViewController(
+            token: sampleToken,
+            locale: "en",
+            onSessionStart: { id in print("[Mode2] Session started: \(id)") },
+            onSessionEnd: { sessionId, messages in print("[Mode2] Session ended — id: \(sessionId), \(messages.count) messages") },
+            onError: { err in print("[Mode2] Error: \(err)") },
+            onClose: onClose
+        )
 
         let nav = UINavigationController(rootViewController: chatVC)
         nav.isNavigationBarHidden = true

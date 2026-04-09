@@ -18,7 +18,7 @@ public struct RayaChatView: View {
     ///   - imagePickerAdapter: Adapter for image selection. Built-in PHPicker used if omitted. Pass nil to hide.
     ///   - audioRecorderAdapter: Adapter for voice recording. Mic button hidden if nil.
     ///   - onSessionStart: Called with session ID when WebSocket connects.
-    ///   - onSessionEnd: Called when session ends.
+    ///   - onSessionEnd: Called when session ends — passes (sessionId, messages) with remote attachment URLs.
     ///   - onError: Called on connection/send errors.
     ///   - onClose: Called when user closes the widget.
     public init(
@@ -27,7 +27,7 @@ public struct RayaChatView: View {
         imagePickerAdapter: (any ImagePickerAdapter)? = nil,
         audioRecorderAdapter: (any AudioRecorderAdapter)? = nil,
         onSessionStart: ((String) -> Void)? = nil,
-        onSessionEnd: (() -> Void)? = nil,
+        onSessionEnd: ((String, [TypeMessage]) -> Void)? = nil,
         onError: ((String) -> Void)? = nil,
         onClose: (() -> Void)? = nil
     ) {

@@ -106,9 +106,12 @@ final class MessageHandler {
 
         delegate?.onResponse(message: typeMessage, sessionId: responseData.chatSessionId)
 
-        // Handle attachments if present
-        if let attachments = msg.attachments, !attachments.isEmpty {
-            let attType = msg.attachmentType ?? "image"
+        // Handle attachments — check data.attachments first (server puts them inside data), fallback to top-level
+        let atts = responseData.attachments ?? msg.attachments
+        let attType = responseData.attachmentType ?? msg.attachmentType ?? "image"
+        Log.d("Protocol", "RESPONSE attachments: \(atts?.description ?? "nil"), type: \(attType)")
+        if let attachments = atts, !attachments.isEmpty {
+            Log.i("Protocol", "Dispatching onAttachments: \(attachments.count) \(attType) URLs: \(attachments)")
             delegate?.onAttachments(attachments: attachments, type: attType)
         }
     }

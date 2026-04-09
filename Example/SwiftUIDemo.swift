@@ -10,7 +10,7 @@ struct SwiftUIDemo: View {
             token: sampleToken,
             locale: "en",
             onSessionStart: { id in print("[Mode1] Session started: \(id)") },
-            onSessionEnd: { print("[Mode1] Session ended") },
+            onSessionEnd: { sessionId, messages in print("[Mode1] Session ended — id: \(sessionId), \(messages.count) messages") },
             onError: { err in print("[Mode1] Error: \(err)") },
             onClose: { dismiss() }
         )

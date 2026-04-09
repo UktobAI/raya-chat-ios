@@ -232,7 +232,11 @@ public final class RayaChatClient: ObservableObject {
     /// Ends the current session — clears all storage and state.
     @MainActor
     public func endSession() async {
-        // 0. Block all delegate callbacks during teardown
+        // 0. Capture session data BEFORE clearing (for onSessionEnd callback)
+        let finalSessionId = currentSessionId
+        let finalMessages = messages
+
+        // 0b. Block all delegate callbacks during teardown
         isSessionEnding = true
 
         // 1. Destroy WebSocket + block reconnection
@@ -272,8 +276,21 @@ public final class RayaChatClient: ObservableObject {
         showHumanAgentBtn = false
         sessionCloseInfo = nil // Fix: clear stale warning — prevents "Session closed" banner on next Intro
 
-        // 8. Fire callback
-        config.onSessionEnd?()
+        // 8. Fire callback with captured session data (remote URLs already in messages via onAttachments)
+        Log.i("Client", "onSessionEnd — sessionId: \(finalSessionId)")
+        Log.i("Client", "onSessionEnd — \(finalMessages.count) messages:")
+        for (i, msg) in finalMessages.enumerated() {
+            let sender = msg.sender == 1 ? "USER" : (msg.sender == 2 ? "BOT" : "SYSTEM")
+            Log.i("Client", "  [\(i)] \(sender) id=\(msg.id) type=\(msg.type) createdAt=\(msg.createdAt ?? "nil")")
+            Log.i("Client", "       content: \(msg.content ?? "(nil)")")
+            if let attsJson = msg.attachmentsJson {
+                Log.i("Client", "       attachmentsJson: \(attsJson)")
+            }
+            if let audioJson = msg.audioJson {
+                Log.i("Client", "       audioJson: \(audioJson)")
+            }
+        }
+        config.onSessionEnd?(finalSessionId, finalMessages)
         Log.i("Client", "Session ended — all state cleared")
     }
 
@@ -560,30 +577,49 @@ extension RayaChatClient: MessageHandlerDelegate {
     }
 
     func onAttachments(attachments: [String], type: String) {
-        Task.detached { [store = self.messageStore, json = self.json] in
-            guard let lastMsg = store.getLastMessage() else { return }
+        // Find the target message on MainActor first (last user message matching type)
+        safeMainActor {
+            let targetType = type == "image" ? 3 : (type == "audio" ? 2 : 0)
+            guard let idx = self.messages.lastIndex(where: { $0.sender == 1 && $0.type == targetType }) else {
+                Log.w("Client", "onAttachments: no matching user message found for type=\(type)")
+                return
+            }
+            let targetMsg = self.messages[idx]
 
-            if type == "image" && !attachments.isEmpty {
-                let atts = attachments.map { url in
-                    Attachment(id: "", url: url, type: "image", name: "")
+            Task.detached { [store = self.messageStore, json = self.json] in
+                var updated: TypeMessage?
+
+                if type == "image" && !attachments.isEmpty {
+                    let atts = attachments.map { url in
+                        Attachment(id: "", url: url, type: "image", name: "")
+                    }
+                    if let data = try? json.encode(atts), let jsonStr = String(data: data, encoding: .utf8) {
+                        updated = TypeMessage(
+                            id: targetMsg.id, sender: targetMsg.sender, type: targetMsg.type,
+                            content: targetMsg.content, createdAt: targetMsg.createdAt,
+                            attachmentsJson: jsonStr, audioJson: targetMsg.audioJson
+                        )
+                    }
+                } else if type == "audio" && !attachments.isEmpty {
+                    let audioData = AudioData(type: "remote", audioUrls: attachments.first ?? "")
+                    if let data = try? json.encode(audioData), let jsonStr = String(data: data, encoding: .utf8) {
+                        updated = TypeMessage(
+                            id: targetMsg.id, sender: targetMsg.sender, type: targetMsg.type,
+                            content: targetMsg.content, createdAt: targetMsg.createdAt,
+                            attachmentsJson: targetMsg.attachmentsJson, audioJson: jsonStr
+                        )
+                    }
                 }
-                if let data = try? json.encode(atts), let jsonStr = String(data: data, encoding: .utf8) {
-                    let updated = TypeMessage(
-                        id: lastMsg.id, sender: lastMsg.sender, type: lastMsg.type,
-                        content: lastMsg.content, createdAt: lastMsg.createdAt,
-                        attachmentsJson: jsonStr, audioJson: lastMsg.audioJson
-                    )
+
+                if let updated {
                     store.insert(updated)
-                }
-            } else if type == "audio" && !attachments.isEmpty {
-                let audioData = AudioData(type: "remote", audioUrls: attachments.first ?? "")
-                if let data = try? json.encode(audioData), let jsonStr = String(data: data, encoding: .utf8) {
-                    let updated = TypeMessage(
-                        id: lastMsg.id, sender: lastMsg.sender, type: lastMsg.type,
-                        content: lastMsg.content, createdAt: lastMsg.createdAt,
-                        attachmentsJson: lastMsg.attachmentsJson, audioJson: jsonStr
-                    )
-                    store.insert(updated)
+                    Log.i("Client", "onAttachments: updated message \(updated.id) with remote \(type) URLs")
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        if let idx = self.messages.firstIndex(where: { $0.id == updated.id }) {
+                            self.messages[idx] = updated
+                        }
+                    }
                 }
             }
         }

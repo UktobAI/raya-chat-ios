@@ -10,7 +10,7 @@ public struct RayaChatConfig {
     public let token: String
     public let locale: String
     public var onSessionStart: ((String) -> Void)?
-    public var onSessionEnd: (() -> Void)?
+    public var onSessionEnd: ((String, [TypeMessage]) -> Void)?
     public var onError: ((String) -> Void)?
     public var onClose: (() -> Void)?
 
@@ -18,7 +18,7 @@ public struct RayaChatConfig {
         token: String,
         locale: String = "en",
         onSessionStart: ((String) -> Void)? = nil,
-        onSessionEnd: (() -> Void)? = nil,
+        onSessionEnd: ((String, [TypeMessage]) -> Void)? = nil,
         onError: ((String) -> Void)? = nil,
         onClose: (() -> Void)? = nil
     ) {
