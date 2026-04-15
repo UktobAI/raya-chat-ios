@@ -104,9 +104,7 @@ final class MessageHandler {
             createdAt: ts
         )
 
-        delegate?.onResponse(message: typeMessage, sessionId: responseData.chatSessionId)
-
-        // Handle attachments — check data.attachments first (server puts them inside data), fallback to top-level
+        // Handle attachments FIRST (matches Android order — user image gets remote URLs before bot message fires)
         let atts = responseData.attachments ?? msg.attachments
         let attType = responseData.attachmentType ?? msg.attachmentType ?? "image"
         Log.d("Protocol", "RESPONSE attachments: \(atts?.description ?? "nil"), type: \(attType)")
@@ -114,6 +112,9 @@ final class MessageHandler {
             Log.i("Protocol", "Dispatching onAttachments: \(attachments.count) \(attType) URLs: \(attachments)")
             delegate?.onAttachments(attachments: attachments, type: attType)
         }
+
+        // Then add bot response message
+        delegate?.onResponse(message: typeMessage, sessionId: responseData.chatSessionId)
     }
 
     private func handlePresets(_ msg: ChatMessage) {

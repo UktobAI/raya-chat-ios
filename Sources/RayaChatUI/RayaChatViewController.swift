@@ -27,6 +27,7 @@ public final class RayaChatViewController: UIHostingController<AnyView> {
     ///   - audioRecorderAdapter: Adapter for voice recording.
     ///   - onSessionStart: Called with session ID when WebSocket connects.
     ///   - onSessionEnd: Called when session ends — passes (sessionId, messages) with remote attachment URLs.
+    ///   - onMessageUpdate: Called for each message sent/received — passes (sessionId, message) for real-time sync.
     ///   - onError: Called on errors.
     ///   - onClose: Called when user closes the widget.
     public convenience init(
@@ -36,6 +37,7 @@ public final class RayaChatViewController: UIHostingController<AnyView> {
         audioRecorderAdapter: (any AudioRecorderAdapter)? = nil,
         onSessionStart: ((String) -> Void)? = nil,
         onSessionEnd: ((String, [TypeMessage]) -> Void)? = nil,
+        onMessageUpdate: ((String, TypeMessage) -> Void)? = nil,
         onError: ((String) -> Void)? = nil,
         onClose: (() -> Void)? = nil
     ) {
@@ -46,6 +48,7 @@ public final class RayaChatViewController: UIHostingController<AnyView> {
             audioRecorderAdapter: audioRecorderAdapter,
             onSessionStart: onSessionStart,
             onSessionEnd: onSessionEnd,
+            onMessageUpdate: onMessageUpdate,
             onError: onError,
             onClose: onClose
         )

@@ -28,6 +28,7 @@ public struct RayaChatView: View {
         audioRecorderAdapter: (any AudioRecorderAdapter)? = nil,
         onSessionStart: ((String) -> Void)? = nil,
         onSessionEnd: ((String, [TypeMessage]) -> Void)? = nil,
+        onMessageUpdate: ((String, TypeMessage) -> Void)? = nil,
         onError: ((String) -> Void)? = nil,
         onClose: (() -> Void)? = nil
     ) {
@@ -36,6 +37,7 @@ public struct RayaChatView: View {
             locale: locale,
             onSessionStart: onSessionStart,
             onSessionEnd: onSessionEnd,
+            onMessageUpdate: onMessageUpdate,
             onError: onError,
             onClose: onClose
         )

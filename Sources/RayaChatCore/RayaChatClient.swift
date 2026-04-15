@@ -28,6 +28,7 @@ public final class RayaChatClient: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var isConnecting = false
     private var isSessionEnding = false
+    private var pendingAttachmentMessageIds: Set<String> = []
 
     private let json = JSONEncoder()
 
@@ -148,6 +149,7 @@ public final class RayaChatClient: ObservableObject {
             attachmentsJson: attachmentsJson
         )
 
+        pendingAttachmentMessageIds.insert(msg.id) // Defer onMessageUpdate until remote URLs arrive
         addMessageToState(msg)
 
         // Heavy JSON serialization on background thread
@@ -195,6 +197,7 @@ public final class RayaChatClient: ObservableObject {
             audioJson: audioJson
         )
 
+        pendingAttachmentMessageIds.insert(msg.id) // Defer onMessageUpdate until remote URL arrives
         addMessageToState(msg)
 
         let sent = wsManager?.send(base64) ?? false
@@ -252,10 +255,11 @@ public final class RayaChatClient: ObservableObject {
         // 4. Cancel all Combine subscriptions (prevents stale state updates)
         cancellables.removeAll()
 
-        // 5. Clear identity
+        // 5. Clear identity + pending state
         sessionId = ""
         currentSessionId = ""
         currentUserInfo = UserInfo()
+        pendingAttachmentMessageIds.removeAll()
 
         // 6. Clear storage on background
         await Task.detached { [messageStore = self.messageStore, keychain = self.keychainStorage] in
@@ -414,6 +418,11 @@ public final class RayaChatClient: ObservableObject {
         Task.detached { [store = self.messageStore] in
             store.insert(message)
             store.trimToLatest()
+        }
+
+        // Fire onMessageUpdate — skip pending image/audio messages (they fire after remote URLs arrive)
+        if !pendingAttachmentMessageIds.contains(message.id) {
+            config.onMessageUpdate?(currentSessionId, message)
         }
     }
 
@@ -619,6 +628,9 @@ extension RayaChatClient: MessageHandlerDelegate {
                         if let idx = self.messages.firstIndex(where: { $0.id == updated.id }) {
                             self.messages[idx] = updated
                         }
+                        // Fire deferred onMessageUpdate now that URLs are remote
+                        self.pendingAttachmentMessageIds.remove(updated.id)
+                        self.config.onMessageUpdate?(self.currentSessionId, updated)
                     }
                 }
             }

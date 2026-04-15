@@ -24,6 +24,7 @@ Works with **SwiftUI**, **UIKit + Storyboard**, **Sheet/Modal**, and **Headless 
 - [RTL / Arabic Support](#rtl--arabic-support)
 - [Headless Mode — Full Guide](#headless-mode--full-guide)
 - [Exporting Session Data (onSessionEnd)](#exporting-session-data-onsessionend)
+- [Real-Time Message Sync (onMessageUpdate)](#real-time-message-sync-onmessageupdate)
 - [Session Persistence](#session-persistence)
 - [Background / Foreground Behavior](#background--foreground-behavior)
 - [Keeping Chat Alive Across Tabs](#keeping-chat-alive-across-tabs)
@@ -194,6 +195,7 @@ All 4 modes accept the same configuration parameters. In packaged UI modes (1-3)
 | `audioRecorderAdapter` | `AudioRecorderAdapter?` | No | `nil` | Adapter for voice recording. Mic button hidden if not provided. |
 | `onSessionStart` | `(String) -> Void` | No | `nil` | Called when WebSocket connects successfully |
 | `onSessionEnd` | `(String, [TypeMessage]) -> Void` | No | `nil` | Called when session ends — passes session ID and full message history |
+| `onMessageUpdate` | `(String, TypeMessage) -> Void` | No | `nil` | Called for each message sent/received — passes (sessionId, message) for real-time sync |
 | `onError` | `(String) -> Void` | No | `nil` | Called on connection or send errors |
 | `onClose` | `() -> Void` | No | `nil` | Called when user taps the close (X) button |
 
@@ -250,6 +252,26 @@ onSessionEnd: { sessionId, messages in
 ```
 
 See [Exporting Session Data](#exporting-session-data-onsessionend) for a full example.
+
+### `onMessageUpdate(_ sessionId: String, _ message: TypeMessage)`
+
+Fires for every message transaction — both sent and received. Use this to sync messages to your backend in real-time, so nothing is lost even if the user never ends the session.
+
+```swift
+onMessageUpdate: { sessionId, message in
+    api.syncMessage(sessionId: sessionId, message: [
+        "id": message.id,
+        "sender": message.sender,
+        "type": message.type,
+        "content": message.content ?? "",
+        "created_at": message.createdAt ?? "",
+        "attachments_json": message.attachmentsJson ?? "",
+        "audio_json": message.audioJson ?? "",
+    ])
+}
+```
+
+**Image/audio messages are deferred** — the callback does NOT fire when the user sends images or audio (because local data URIs are useless for your DB). It fires only after the server responds with remote S3 URLs. See [Real-Time Message Sync](#real-time-message-sync-onmessageupdate) for the complete timeline.
 
 ### `onError(_ error: String)`
 
@@ -632,6 +654,113 @@ Each `TypeMessage` contains:
 | `audioJson` | `String?` | JSON audio data with **remote URL** (safe to store in your DB) |
 
 > **Image/audio URLs are server URLs, not local paths.** When the user sends images or audio, the SDK initially stores local data URIs. Once the server processes the upload and responds, the SDK automatically replaces them with permanent remote URLs (e.g., `https://s3.amazonaws.com/...`). By the time `onSessionEnd` fires, all attachments contain remote URLs that can be stored in your database or accessed from any device.
+
+### When to use `onSessionEnd` vs `onMessageUpdate`
+
+| Scenario | Use |
+|----------|-----|
+| Export full transcript after session ends | `onSessionEnd` |
+| Mark session as "closed" in your DB | `onSessionEnd` |
+| Sync every message in real-time so no data is lost on app close | `onMessageUpdate` |
+| Both — real-time sync + close marker | Both callbacks together |
+
+`onSessionEnd` fires **only** on explicit session end (user action or server command). If the user closes the app without ending the session, `onSessionEnd` **never fires** and unsent messages are not exported. Use `onMessageUpdate` to guarantee every message reaches your backend regardless of how the app exits.
+
+---
+
+## Real-Time Message Sync (onMessageUpdate)
+
+The `onMessageUpdate` callback fires after every message send/receive with the individual message. Unlike `onSessionEnd`, it fires **during** the session — so by the time the user closes the app, every message has already been synced.
+
+### When it fires
+
+| Event | Fires? | Message received |
+|-------|--------|-----------------|
+| User sends text | Yes (immediately) | User's message (sender=1, type=1) |
+| Bot responds | Yes (immediately) | Bot's message (sender=2, type=1) |
+| User sends images | Yes (after server returns S3 URLs) | User's image message with remote URLs (sender=1, type=3) |
+| User sends audio | Yes (after server returns S3 URL) | User's audio message with remote URL (sender=1, type=2) |
+| System message (agent joined) | Yes (immediately) | System message (sender=2, type=4) |
+| Bot thinking (STEP/CHUNK) | No | -- |
+| Presets/commands | No | -- |
+| Session end | No | Use `onSessionEnd` instead |
+
+### Why image/audio messages are deferred
+
+When the user sends images, the SDK initially stores local `data:image/jpeg;base64,...` URIs. These are useless for your backend DB. The callback waits until the server processes the upload and responds with permanent remote URLs (e.g., `https://s3.amazonaws.com/...`), then fires with the updated message.
+
+### Example — sync every message to your API
+
+```swift
+RayaChatView(
+    token: "your-bot-token",
+    onMessageUpdate: { sessionId, message in
+        Task {
+            await api.post("/v1/messages", body: [
+                "session_id": sessionId,
+                "customer_id": customerId,
+                "message_id": message.id,
+                "sender": message.sender == 1 ? "user" : (message.sender == 2 ? "bot" : "system"),
+                "type": message.type == 1 ? "text" : (message.type == 2 ? "audio" : (message.type == 3 ? "image" : "system")),
+                "content": message.content ?? "",
+                "attachments": message.attachmentsJson ?? "",
+                "audio": message.audioJson ?? "",
+                "created_at": message.createdAt ?? "",
+            ])
+        }
+    },
+    onSessionEnd: { sessionId, messages in
+        // Mark session as closed in your backend
+        Task { await api.post("/v1/sessions/close", body: ["session_id": sessionId]) }
+    }
+)
+```
+
+### Image message timeline
+
+```
+1. User picks 2 images and taps send
+2. Images appear in chat immediately (local URIs for display)
+3. SDK sends images to server via WebSocket
+4. Server processes and returns RESPONSE with S3 URLs
+5. SDK updates user's message with remote URLs
+6. onMessageUpdate fires with: sender=1, type=3, attachmentsJson=[{url:"https://s3..."}]
+7. onMessageUpdate fires with bot's reply: sender=2, type=1, content="I see your images..."
+```
+
+Steps 1-5 happen internally. The developer's callback only fires at step 6 and 7 — always with clean, storable data.
+
+### Complete session timeline
+
+```
+1.  Bot: "Hi there 👋"                → onMessageUpdate(sid, bot msg)
+2.  User: "Hello"                      → onMessageUpdate(sid, user msg)
+3.  Bot: "How can I help?"             → onMessageUpdate(sid, bot msg)
+4.  User sends 2 images + "Check this" → (no callback yet)
+5.  Server processes images...
+6.  User image gets remote URLs        → onMessageUpdate(sid, user img msg with S3 URLs)
+7.  Bot: "I see your images"           → onMessageUpdate(sid, bot msg)
+8.  User: "Thanks"                     → onMessageUpdate(sid, user msg)
+9.  Bot: "You're welcome"              → onMessageUpdate(sid, bot msg)
+10. User taps End Session              → onSessionEnd(sid, all 7 messages)
+
+If user closes app after step 9 instead of step 10 — all 7 messages
+were already synced individually via onMessageUpdate. Nothing is lost.
+```
+
+### What the message contains
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `String` | Unique message ID |
+| `sender` | `Int` | `1` = user, `2` = bot, `0` = system |
+| `type` | `Int` | `1` = text, `2` = audio, `3` = image, `4` = system |
+| `content` | `String?` | Message text or caption |
+| `createdAt` | `String?` | Unix timestamp in seconds |
+| `attachmentsJson` | `String?` | JSON array of image attachments with remote URLs |
+| `audioJson` | `String?` | JSON audio data with remote URL |
+
+> **All URLs are remote server URLs, never local paths.** Safe to store directly in your database.
 
 ---
 
