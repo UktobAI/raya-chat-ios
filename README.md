@@ -25,6 +25,7 @@ Works with **SwiftUI**, **UIKit + Storyboard**, **Sheet/Modal**, and **Headless 
 - [Headless Mode — Full Guide](#headless-mode--full-guide)
 - [Exporting Session Data (onSessionEnd)](#exporting-session-data-onsessionend)
 - [Real-Time Message Sync (onMessageUpdate)](#real-time-message-sync-onmessageupdate)
+- [TypeMessage Schema](#typemessage-schema)
 - [Session Persistence](#session-persistence)
 - [Background / Foreground Behavior](#background--foreground-behavior)
 - [Keeping Chat Alive Across Tabs](#keeping-chat-alive-across-tabs)
@@ -641,19 +642,7 @@ struct SupportScreen: View {
 | `sessionId` | `String` | The server-assigned session ID (empty string if session never connected) |
 | `messages` | `[TypeMessage]` | Complete message history at the moment the session ended |
 
-Each `TypeMessage` contains:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `String` | Unique message ID |
-| `sender` | `Int` | `1` = user, `2` = bot/agent |
-| `type` | `Int` | `1` = text, `2` = audio, `3` = image, `4` = agent_activity |
-| `content` | `String?` | Message text (may contain markdown for bot messages) |
-| `createdAt` | `String?` | Unix timestamp in seconds |
-| `attachmentsJson` | `String?` | JSON array of image attachments with **remote URLs** (safe to store in your DB) |
-| `audioJson` | `String?` | JSON audio data with **remote URL** (safe to store in your DB) |
-
-> **Image/audio URLs are server URLs, not local paths.** When the user sends images or audio, the SDK initially stores local data URIs. Once the server processes the upload and responds, the SDK automatically replaces them with permanent remote URLs (e.g., `https://s3.amazonaws.com/...`). By the time `onSessionEnd` fires, all attachments contain remote URLs that can be stored in your database or accessed from any device.
+See [TypeMessage Schema](#typemessage-schema) for the full message object structure.
 
 ### When to use `onSessionEnd` vs `onMessageUpdate`
 
@@ -748,19 +737,165 @@ If user closes app after step 9 instead of step 10 — all 7 messages
 were already synced individually via onMessageUpdate. Nothing is lost.
 ```
 
-### What the message contains
+See [TypeMessage Schema](#typemessage-schema) for the full message object structure.
+
+---
+
+## TypeMessage Schema
+
+`TypeMessage` is the message object returned by `onSessionEnd`, `onMessageUpdate`, and `client.messages` (headless mode). Every message in the SDK — user, bot, or system — uses this structure.
+
+### Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `String` | Unique message ID |
-| `sender` | `Int` | `1` = user, `2` = bot, `0` = system |
-| `type` | `Int` | `1` = text, `2` = audio, `3` = image, `4` = system |
-| `content` | `String?` | Message text or caption |
-| `createdAt` | `String?` | Unix timestamp in seconds |
-| `attachmentsJson` | `String?` | JSON array of image attachments with remote URLs |
-| `audioJson` | `String?` | JSON audio data with remote URL |
+| `id` | `String` | Unique message ID. User messages: `"local-1712678410-a1b2c3d4"`. Bot messages: `"resp-uuid"`. System: `"system-timestamp"`. |
+| `sender` | `Int` | Who sent it: `1` = user, `2` = bot/agent, `0` = system |
+| `type` | `Int` | Message type: `1` = text, `2` = audio, `3` = image, `4` = system/agent_activity |
+| `content` | `String?` | Message text. May contain markdown for bot messages. Image caption for image messages. `nil` for audio-only messages. |
+| `createdAt` | `String?` | Unix timestamp in **seconds** (e.g., `"1712678410"`). Stored as String. |
+| `attachmentsJson` | `String?` | JSON string containing a list of image attachments. `nil` for non-image messages. See [Attachment Schema](#attachment-schema) below. |
+| `audioJson` | `String?` | JSON string containing audio data. `nil` for non-audio messages. See [AudioData Schema](#audiodata-schema) below. |
 
-> **All URLs are remote server URLs, never local paths.** Safe to store directly in your database.
+### Examples by message type
+
+**Text message (user):**
+```json
+{
+    "id": "local-1712678410-a1b2c3d4",
+    "sender": 1,
+    "type": 1,
+    "content": "Hello, I need help with my order",
+    "createdAt": "1712678410",
+    "attachmentsJson": null,
+    "audioJson": null
+}
+```
+
+**Text message (bot):**
+```json
+{
+    "id": "resp-550e8400-e29b-41d4-a716-446655440000",
+    "sender": 2,
+    "type": 1,
+    "content": "Hi there! I'd be happy to help. Could you share your order number?",
+    "createdAt": "1712678415",
+    "attachmentsJson": null,
+    "audioJson": null
+}
+```
+
+**Image message (user — with remote S3 URLs):**
+```json
+{
+    "id": "local-img-1712678420-e5f6g7h8",
+    "sender": 1,
+    "type": 3,
+    "content": "Here's a photo of the issue",
+    "createdAt": "1712678420",
+    "attachmentsJson": "[{\"id\":\"\",\"url\":\"https://s3.amazonaws.com/bucket/image1.jpg\",\"type\":\"image\",\"name\":\"\"},{\"id\":\"\",\"url\":\"https://s3.amazonaws.com/bucket/image2.jpg\",\"type\":\"image\",\"name\":\"\"}]",
+    "audioJson": null
+}
+```
+
+**Audio message (user — with remote S3 URL):**
+```json
+{
+    "id": "local-audio-1712678430",
+    "sender": 1,
+    "type": 2,
+    "content": "",
+    "createdAt": "1712678430",
+    "attachmentsJson": null,
+    "audioJson": "{\"type\":\"remote\",\"audioUrls\":\"https://s3.amazonaws.com/bucket/voice-note.m4a\"}"
+}
+```
+
+**System message (agent activity):**
+```json
+{
+    "id": "system-1712678440",
+    "sender": 0,
+    "type": 4,
+    "content": "Agent joined the conversation",
+    "createdAt": "1712678440",
+    "attachmentsJson": null,
+    "audioJson": null
+}
+```
+
+### Attachment Schema
+
+`attachmentsJson` is a JSON-serialized array. Parse it to get individual image URLs:
+
+```swift
+// Swift
+let attachments = message.attachments  // computed property — decodes JSON automatically
+for att in attachments {
+    print("Image: \(att.url)")
+}
+
+// Or manually:
+if let json = message.attachmentsJson,
+   let data = json.data(using: .utf8),
+   let atts = try? JSONDecoder().decode([Attachment].self, from: data) {
+    for att in atts { print("Image: \(att.url)") }
+}
+```
+
+Each `Attachment` object:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `String` | Attachment ID (empty string for server-returned URLs) |
+| `url` | `String` | Remote image URL — e.g., `"https://s3.amazonaws.com/bucket/image1.jpg"` |
+| `type` | `String` | Always `"image"` |
+| `name` | `String` | Filename (may be empty) |
+
+Example parsed:
+```json
+[
+    {"id": "", "url": "https://s3.amazonaws.com/bucket/image1.jpg", "type": "image", "name": ""},
+    {"id": "", "url": "https://s3.amazonaws.com/bucket/image2.jpg", "type": "image", "name": ""}
+]
+```
+
+### AudioData Schema
+
+`audioJson` is a JSON-serialized object. Parse it to get the audio URL:
+
+```swift
+// Swift
+if let audio = message.audio {  // computed property — decodes JSON automatically
+    print("Audio: \(audio.audioUrls)")
+}
+
+// Or manually:
+if let json = message.audioJson,
+   let data = json.data(using: .utf8),
+   let audio = try? JSONDecoder().decode(AudioData.self, from: data) {
+    print("Audio: \(audio.audioUrls)")
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `String` | `"remote"` (server URL) or `"local"` (before upload — never in callbacks) |
+| `audioUrls` | `String` | Remote audio URL — e.g., `"https://s3.amazonaws.com/bucket/voice.m4a"` |
+
+> **Note:** `audioUrls` is a single URL string (not an array) despite the plural name. This naming is inherited from the server protocol.
+
+Example parsed:
+```json
+{"type": "remote", "audioUrls": "https://s3.amazonaws.com/bucket/voice-note.m4a"}
+```
+
+### Important notes
+
+- **All URLs are remote server URLs, never local paths.** `attachmentsJson` and `audioJson` in `onSessionEnd` and `onMessageUpdate` callbacks always contain permanent S3/CDN URLs that can be stored in your database or accessed from any device.
+- **`content` may contain markdown** for bot messages (bold, italic, code, links). Parse or render accordingly if storing in your system.
+- **`createdAt` is seconds, not milliseconds.** Multiply by 1000 if you need a JavaScript `Date` or Swift `Date(timeIntervalSince1970:)` already takes seconds.
+- **`sender` values:** `1` = user, `2` = bot/AI agent/human agent, `0` = system. There is no distinction between AI and human agent at the message level — both are `sender=2`.
 
 ---
 
