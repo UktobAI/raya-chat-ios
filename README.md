@@ -1019,7 +1019,7 @@ raya-chat-ios/
 │   ├── Components/Common/            # Header, Icons, Strings, Toast
 │   └── Theme/                        # Colors, typography, RTL utils
 │
-└── Example/                           # Demo app (4 integration modes)
+└── ExampleApp/                        # Demo app (4 integration modes, Xcode project)
 ```
 
 ---
@@ -1036,7 +1036,7 @@ raya-chat-ios/
 
 ## Example App
 
-The `Example/` directory demonstrates all 4 integration modes:
+Open `ExampleApp/ExampleApp.xcodeproj` in Xcode, pick a simulator, and press ⌘R. The demo covers all 4 integration modes:
 
 | Demo | Mode | What it shows |
 |------|------|--------------|
@@ -1044,6 +1044,8 @@ The `Example/` directory demonstrates all 4 integration modes:
 | UIKitDemo | Mode 2 | Chat in UINavigationController |
 | SheetDemo | Mode 3 | Chat slides up as bottom sheet |
 | HeadlessDemo | Mode 4 | Nocturne Velvet custom UI with all features |
+
+Set your bot token in `ExampleApp/ExampleApp/SampleToken.swift` (a sample is included).
 
 ---
 

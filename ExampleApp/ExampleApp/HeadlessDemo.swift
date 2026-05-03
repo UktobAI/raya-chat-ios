@@ -1,5 +1,6 @@
 import SwiftUI
 import RayaChatCore
+import RayaChatUI
 
 // MARK: - Nocturne Velvet Palette
 
@@ -15,6 +16,7 @@ private let rose = Color(hex: 0xD4566A)
 private let emerald = Color(hex: 0x4ADE80)
 
 /// Mode 4 demo — Nocturne Velvet headless chat using ALL RayaChatClient features.
+/// Matches Android HeadlessDemoActivity + CustomChatScreen feature for feature.
 struct HeadlessDemo: View {
     @StateObject private var client = RayaChatClient(config: RayaChatConfig(
         token: sampleToken,
@@ -23,8 +25,22 @@ struct HeadlessDemo: View {
         onError: { err in print("[Mode4] Error: \(err)") }
     ))
 
+    var imagePickerAdapter: (any ImagePickerAdapter)?
+
+    #if canImport(UIKit)
+    @State private var defaultAdapter = DefaultImagePickerAdapter()
+    #endif
+    private var effectiveAdapter: (any ImagePickerAdapter)? {
+        #if canImport(UIKit)
+        return imagePickerAdapter ?? defaultAdapter
+        #else
+        return imagePickerAdapter
+        #endif
+    }
+
     @State private var chatStarted = false
     @State private var text = ""
+    @State private var selectedImages: [ImageAsset] = []
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -106,10 +122,8 @@ struct HeadlessDemo: View {
 
     private var chatScreen: some View {
         VStack(spacing: 0) {
-            // Header
             chatHeader
 
-            // Messages
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -120,10 +134,7 @@ struct HeadlessDemo: View {
                                 chatBubble(msg)
                             }
                         }
-
-                        // Footer
-                        footerContent
-                            .id("__footer__")
+                        footerContent.id("__footer__")
                     }
                 }
                 .onChange(of: client.messages.count) { _ in
@@ -134,7 +145,6 @@ struct HeadlessDemo: View {
                 }
             }
 
-            // Composer
             composer
         }
         .background(midnight.ignoresSafeArea())
@@ -162,7 +172,7 @@ struct HeadlessDemo: View {
                         Circle()
                             .fill(client.isConnected ? emerald : (client.isOnline ? amber : rose))
                             .frame(width: 10, height: 10)
-                            .overlay(Circle().fill(onyx).frame(width: 12, height: 12).offset(x: 0, y: 0), alignment: .center)
+                            .overlay(Circle().fill(onyx).frame(width: 12, height: 12), alignment: .center)
                             .overlay(Circle().fill(client.isConnected ? emerald : (client.isOnline ? amber : rose)).frame(width: 8, height: 8))
                     }
 
@@ -174,6 +184,13 @@ struct HeadlessDemo: View {
                 }
 
                 Spacer()
+
+                // Session ID
+                if !client.currentSessionId.isEmpty {
+                    Text(client.currentSessionId.prefix(8) + "...")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(stone.opacity(0.5))
+                }
 
                 Button(action: endChat) {
                     Text("End").font(.system(size: 12, weight: .medium)).foregroundColor(rose).tracking(1)
@@ -193,10 +210,12 @@ struct HeadlessDemo: View {
     private func chatBubble(_ msg: TypeMessage) -> some View {
         let isUser = msg.sender == 1
         let content = msg.content ?? ""
-        guard !content.isEmpty else { return AnyView(EmptyView()) }
+        let attachments = msg.attachments
 
         return AnyView(
             HStack(alignment: .bottom, spacing: 8) {
+                if isUser { Spacer(minLength: 0) }
+
                 if !isUser {
                     ZStack {
                         Circle().fill(graphite).frame(width: 24, height: 24)
@@ -205,14 +224,33 @@ struct HeadlessDemo: View {
                 }
 
                 VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
-                    Text(content)
-                        .font(.system(size: 14))
-                        .foregroundColor(isUser ? midnight : cream)
-                        .lineSpacing(4)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(isUser ? amber : slate)
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                    // Image attachments
+                    if !attachments.isEmpty {
+                        HStack(spacing: 4) {
+                            ForEach(attachments, id: \.id) { att in
+                                AsyncImage(url: URL(string: att.url)) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(graphite)
+                                        .overlay(Text("📷").font(.system(size: 16)))
+                                }
+                                .frame(width: 56, height: 56)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                    }
+
+                    if !content.isEmpty {
+                        Text(content)
+                            .font(.system(size: 14))
+                            .foregroundColor(isUser ? midnight : cream)
+                            .lineSpacing(4)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(isUser ? amber : slate)
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                    }
 
                     if let ts = msg.createdAt.flatMap({ Int64($0) }), ts > 0 {
                         Text(formatLocalTimeOrEmpty(epochSeconds: ts))
@@ -221,8 +259,6 @@ struct HeadlessDemo: View {
                     }
                 }
                 .frame(maxWidth: 300, alignment: isUser ? .trailing : .leading)
-
-                if isUser { Spacer(minLength: 0) }
             }
             .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
             .padding(.horizontal, 16)
@@ -242,24 +278,27 @@ struct HeadlessDemo: View {
 
     @ViewBuilder
     private var footerContent: some View {
-        // Typing
+        // Typing indicator — animated dots
         if client.loading && client.currentMessage.isEmpty && client.info == nil {
             typingDots
         }
 
-        // Status
+        // Status (Searching..., Thinking...)
         if let status = client.status, client.currentMessage.isEmpty {
             Text(status).font(.system(size: 10)).foregroundColor(amber.opacity(0.7)).tracking(1)
                 .padding(.leading, 32).padding(.bottom, 8)
         }
 
-        // Info
+        // Info (Waiting for human agent...)
         if let info = client.info {
-            Text(info).font(.system(size: 12)).foregroundColor(creamMuted)
-                .padding(.leading, 32).padding(.bottom, 12)
+            HStack(spacing: 6) {
+                Text("⏳").font(.system(size: 10))
+                Text(info).font(.system(size: 12)).foregroundColor(creamMuted)
+            }
+            .padding(.leading, 32).padding(.bottom, 12)
         }
 
-        // Escalation
+        // Escalation button
         if client.showHumanAgentBtn {
             HStack {
                 Spacer()
@@ -294,12 +333,19 @@ struct HeadlessDemo: View {
         }
     }
 
-    // MARK: - Typing Dots
+    // MARK: - Typing Dots (animated, matches Android stagger)
 
     private var typingDots: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3, id: \.self) { _ in
-                Circle().fill(amber.opacity(0.6)).frame(width: 5, height: 5)
+        TimelineView(.animation) { timeline in
+            let phase = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.8)
+            HStack(spacing: 4) {
+                ForEach(0..<3, id: \.self) { i in
+                    let stagger = Double(i) * 0.15
+                    let local = phase - stagger
+                    let t = (local > 0 && local < 0.4) ? (local < 0.2 ? local / 0.2 : 1.0 - (local - 0.2) / 0.2) : 0.0
+                    Circle().fill(amber.opacity(0.6)).frame(width: 5, height: 5)
+                        .offset(y: CGFloat(-5.0 * t))
+                }
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
@@ -320,25 +366,26 @@ struct HeadlessDemo: View {
         case "end_session":
             endSessionCommand(cmd)
         case "feedback_received":
-            Text("Closing session...").font(.system(size: 11)).foregroundColor(stone)
-                .padding(.leading, 32).padding(.bottom, 12)
+            countdownCommand(cmd)
         default:
             EmptyView()
         }
     }
 
     private func ratingCommand(_ cmd: CommandData) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let colors: [Color] = [rose, Color(hex: 0xF97316), amber, Color(hex: 0x84CC16), emerald]
+        return VStack(alignment: .leading, spacing: 10) {
             if !cmd.message.isEmpty {
                 Text(cmd.message).font(.system(size: 13)).foregroundColor(creamMuted)
             }
             HStack(spacing: 8) {
                 ForEach(0..<cmd.options.count, id: \.self) { i in
                     let val = (cmd.options[i].value as? Int) ?? (i + 1)
+                    let c = colors.indices.contains(i) ? colors[i] : amber
                     Button(action: { client.sendCommandResponse(command: "rate_conversation", response: val) }) {
-                        Text("\(val)").font(.system(size: 14, weight: .light)).foregroundColor(stone)
+                        Text("\(val)").font(.system(size: 14, weight: .light)).foregroundColor(c)
                             .frame(width: 40, height: 40)
-                            .overlay(Circle().stroke(stone.opacity(0.3), lineWidth: 0.5))
+                            .overlay(Circle().stroke(c.opacity(0.5), lineWidth: 0.5))
                     }
                 }
             }
@@ -348,26 +395,37 @@ struct HeadlessDemo: View {
         .padding(.horizontal, 16).padding(.bottom, 12)
     }
 
+    @State private var feedbackText = ""
+
     private func feedbackCommand(_ cmd: CommandData) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if !cmd.message.isEmpty {
                 Text(cmd.message).font(.system(size: 13)).foregroundColor(creamMuted)
             }
-            TextField("Share your thoughts...", text: .constant(""))
+            TextField("Share your thoughts...", text: $feedbackText)
                 .font(.system(size: 13)).foregroundColor(cream)
                 .padding(12)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(stone.opacity(0.3), lineWidth: 0.5))
 
+            Text("\(feedbackText.count)/200")
+                .font(.system(size: 10)).foregroundColor(stone)
+
             HStack {
                 Spacer()
                 if cmd.optional {
-                    Button("Skip") { client.sendCommandResponse(command: "submit_feedback", response: "") }
-                        .font(.system(size: 12)).foregroundColor(stone)
+                    Button("Skip") {
+                        client.sendCommandResponse(command: "submit_feedback", response: "")
+                        feedbackText = ""
+                    }
+                    .font(.system(size: 12)).foregroundColor(stone)
                 }
-                Button("Submit") { client.sendCommandResponse(command: "submit_feedback", response: "") }
-                    .font(.system(size: 12, weight: .medium)).foregroundColor(midnight)
-                    .padding(.horizontal, 14).padding(.vertical, 6)
-                    .background(amber).clipShape(Capsule())
+                Button("Submit") {
+                    client.sendCommandResponse(command: "submit_feedback", response: feedbackText)
+                    feedbackText = ""
+                }
+                .font(.system(size: 12, weight: .medium)).foregroundColor(midnight)
+                .padding(.horizontal, 14).padding(.vertical, 6)
+                .background(amber).clipShape(Capsule())
             }
         }
         .padding(14).background(slate).clipShape(RoundedRectangle(cornerRadius: 16))
@@ -396,19 +454,82 @@ struct HeadlessDemo: View {
         .padding(.horizontal, 16).padding(.bottom, 12)
     }
 
+    @State private var countdownRemaining = 3
+
+    private func countdownCommand(_ cmd: CommandData) -> some View {
+        HStack(spacing: 10) {
+            // Circular countdown
+            ZStack {
+                Circle().stroke(stone.opacity(0.3), lineWidth: 2).frame(width: 28, height: 28)
+                Circle()
+                    .trim(from: 0, to: CGFloat(countdownRemaining) / 3.0)
+                    .stroke(amber, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .frame(width: 28, height: 28)
+                    .rotationEffect(.degrees(-90))
+                Text("\(countdownRemaining)").font(.system(size: 11, weight: .semibold)).foregroundColor(cream)
+            }
+            Text("Ending session...").font(.system(size: 11)).foregroundColor(stone)
+        }
+        .padding(.leading, 32).padding(.bottom, 12)
+        .task {
+            for _ in 0..<3 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if countdownRemaining > 0 { countdownRemaining -= 1 }
+            }
+        }
+    }
+
     // MARK: - Composer
 
     private var composer: some View {
         VStack(spacing: 0) {
+            // Image preview
+            if !selectedImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, img in
+                            ZStack(alignment: .topTrailing) {
+                                AsyncImage(url: URL(string: img.uri)) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: {
+                                    RoundedRectangle(cornerRadius: 8).fill(graphite)
+                                }
+                                .frame(width: 56, height: 56)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                                Button(action: { selectedImages.remove(at: index) }) {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundColor(cream)
+                                        .frame(width: 18, height: 18)
+                                        .background(Color.black.opacity(0.6))
+                                        .clipShape(Circle())
+                                }
+                                .offset(x: 4, y: -4)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                }
+            }
+
             Rectangle().fill(amber.opacity(0.1)).frame(height: 0.5)
             HStack(spacing: 10) {
+                // Image picker button (only if adapter provided)
+                if effectiveAdapter != nil {
+                    Button(action: pickImages) {
+                        Text("📎").font(.system(size: 18))
+                            .frame(width: 36, height: 36)
+                    }
+                }
+
                 TextField("Write something...", text: $text)
                     .font(.system(size: 15)).foregroundColor(cream)
                     .padding(.horizontal, 18).padding(.vertical, 10)
                     .background(slate).clipShape(RoundedRectangle(cornerRadius: 22))
 
                 Button(action: sendMessage) {
-                    let canSend = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    let canSend = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !selectedImages.isEmpty
                     Image(systemName: "arrow.up")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundColor(canSend ? midnight : stone)
@@ -434,9 +555,31 @@ struct HeadlessDemo: View {
 
     private func sendMessage() {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        client.sendMessage(trimmed)
-        text = ""
+
+        if !selectedImages.isEmpty {
+            let payloads = selectedImages.map {
+                ImagePayload(name: $0.name, type: $0.type, base64: $0.base64, uri: $0.uri)
+            }
+            client.sendImages(payloads, caption: trimmed)
+            selectedImages = []
+            text = ""
+        } else if !trimmed.isEmpty {
+            client.sendMessage(trimmed)
+            text = ""
+        }
+    }
+
+    private func pickImages() {
+        guard let adapter = effectiveAdapter else { return }
+        Task {
+            let remaining = 5 - selectedImages.count
+            guard remaining > 0 else { return }
+            if let picked = try? await adapter.pickImages(maxCount: remaining), !picked.isEmpty {
+                await MainActor.run {
+                    selectedImages = (selectedImages + picked).prefix(5).map { $0 }
+                }
+            }
+        }
     }
 
     private func endChat() {
