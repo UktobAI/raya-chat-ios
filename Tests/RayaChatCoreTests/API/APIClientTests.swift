@@ -51,6 +51,6 @@ final class APIClientTests: XCTestCase {
         let url = client.constructWebSocketUrl(sessionId: "", userInfo: UserInfo())
 
         XCTAssertTrue(url.contains(Constants.defaultEndpoint))
-        XCTAssertTrue(url.contains("/v1/conversations/ws/start"))
+        XCTAssertTrue(url.contains("/v1/enhanced-chat/ws/stream"))
     }
 }

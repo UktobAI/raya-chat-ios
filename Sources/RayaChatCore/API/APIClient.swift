@@ -66,7 +66,7 @@ final class APIClient: @unchecked Sendable {
         var components = URLComponents()
         components.scheme = "wss"
         components.host = endpoint
-        components.path = "/v1/conversations/ws/start"
+        components.path = "/v1/enhanced-chat/ws/stream"
         components.queryItems = [
             URLQueryItem(name: "integration_type", value: Constants.integrationType),
             URLQueryItem(name: "token", value: token),

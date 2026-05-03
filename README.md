@@ -43,7 +43,7 @@ Works with **SwiftUI**, **UIKit + Storyboard**, **Sheet/Modal**, and **Headless 
 In Xcode: **File > Add Package Dependencies** > paste:
 
 ```
-https://github.com/teammates-ai/raya-chat-ios
+https://github.com/UktobAI/raya-chat-ios
 ```
 
 Select **RayaChatUI** (includes Core) for packaged UI, or **RayaChatCore** for headless only.

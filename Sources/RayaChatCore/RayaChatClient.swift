@@ -599,8 +599,16 @@ extension RayaChatClient: MessageHandlerDelegate {
                 var updated: TypeMessage?
 
                 if type == "image" && !attachments.isEmpty {
-                    let atts = attachments.map { url in
-                        Attachment(id: "", url: url, type: "image", name: "")
+                    // Preserve original id/name from local message, only update URL
+                    let originalAtts = targetMsg.attachments
+                    let atts = attachments.enumerated().map { idx, url -> Attachment in
+                        let original = originalAtts.indices.contains(idx) ? originalAtts[idx] : nil
+                        return Attachment(
+                            id: original?.id ?? "",
+                            url: url,
+                            type: "image",
+                            name: original?.name ?? ""
+                        )
                     }
                     if let data = try? json.encode(atts), let jsonStr = String(data: data, encoding: .utf8) {
                         updated = TypeMessage(

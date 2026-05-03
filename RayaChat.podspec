@@ -3,10 +3,10 @@ Pod::Spec.new do |s|
   s.version      = "0.1.0"
   s.summary      = "Raya AI Chat SDK for iOS"
   s.description  = "Native iOS SDK for embedding the Raya AI chat widget. SwiftUI + UIKit. Zero third-party dependencies."
-  s.homepage     = "https://github.com/teammates-ai/raya-chat-ios"
+  s.homepage     = "https://github.com/UktobAI/raya-chat-ios"
   s.license      = { :type => "MIT", :file => "LICENSE" }
   s.author       = { "Teammates AI" => "dev@teammates.ai" }
-  s.source       = { :git => "https://github.com/teammates-ai/raya-chat-ios.git", :tag => s.version }
+  s.source       = { :git => "https://github.com/UktobAI/raya-chat-ios.git", :tag => s.version }
   s.ios.deployment_target = "15.0"
   s.swift_version = "5.9"
 

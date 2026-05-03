@@ -453,7 +453,7 @@ Example/
 ```swift
 // Package.swift is already configured
 // Developers add via Xcode: File → Add Package Dependencies
-// URL: https://github.com/teammates-ai/raya-chat-ios
+// URL: https://github.com/UktobAI/raya-chat-ios
 ```
 
 **CocoaPods (secondary):**
@@ -462,10 +462,10 @@ Pod::Spec.new do |s|
   s.name         = "RayaChat"
   s.version      = "0.1.0"
   s.summary      = "Raya AI Chat SDK for iOS"
-  s.homepage     = "https://github.com/teammates-ai/raya-chat-ios"
+  s.homepage     = "https://github.com/UktobAI/raya-chat-ios"
   s.license      = { :type => "MIT" }
   s.author       = { "Teammates AI" => "dev@teammates.ai" }
-  s.source       = { :git => "https://github.com/teammates-ai/raya-chat-ios.git", :tag => s.version }
+  s.source       = { :git => "https://github.com/UktobAI/raya-chat-ios.git", :tag => s.version }
   s.ios.deployment_target = "15.0"
   s.swift_version = "5.9"
 
