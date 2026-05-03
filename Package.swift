@@ -16,7 +16,8 @@ let package = Package(
         .target(
             name: "RayaChatUI",
             dependencies: ["RayaChatCore"],
-            path: "Sources/RayaChatUI"
+            path: "Sources/RayaChatUI",
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "RayaChatCoreTests",

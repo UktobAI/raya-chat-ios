@@ -17,6 +17,9 @@ Pod::Spec.new do |s|
 
   s.subspec "UI" do |ui|
     ui.source_files = "Sources/RayaChatUI/**/*.swift"
+    ui.resource_bundles = {
+      "RayaChatUI" => ["Sources/RayaChatUI/Resources/Media.xcassets"]
+    }
     ui.dependency "RayaChat/Core"
     ui.frameworks = "SwiftUI"
   end

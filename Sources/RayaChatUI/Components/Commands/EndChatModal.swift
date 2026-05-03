@@ -25,16 +25,12 @@ struct EndChatModal: View {
                         .fill(theme.muted)
                         .frame(width: 75, height: 75)
                     let iconColor = theme.isDark ? Color(hex: 0xA1A1AA) : Color(hex: 0x71717A)
-                    // Composite: chat bubble + X overlay (no single SF Symbol available)
-                    Image(systemName: "message.fill")
-                        .font(.system(size: 28))
+                    Image("MessageSquareXIcon", bundle: .module)
+                        .resizable()
+                        .renderingMode(.template)
+                        .aspectRatio(contentMode: .fit)
                         .foregroundColor(iconColor)
-                        .overlay(
-                            Image(systemName: "xmark")
-                                .font(.system(size: 10, weight: .heavy))
-                                .foregroundColor(theme.muted)
-                                .offset(y: -2)
-                        )
+                        .frame(width: 32, height: 32)
                 }
 
                 Spacer().frame(height: 24)

@@ -50,16 +50,16 @@ struct MessageComposer: View {
                 HStack {
                     // Left: action icons
                     HStack(spacing: 6) {
-                        composerButton(icon: RayaIcons.smile, label: "Emoji") { }
+                        composerButton(assetName: "SmileIcon", label: "Emoji") { }
 
                         if enableImageUpload && imagePickerAdapter != nil {
-                            composerButton(icon: RayaIcons.paperclip, label: "Attach") {
+                            composerButton(assetName: "PaperclipIcon", label: "Attach") {
                                 handlePickImages()
                             }
                         }
 
                         if enableVoiceNote && hasAudioAdapter {
-                            composerButton(icon: RayaIcons.mic, label: "Record") {
+                            composerButton(assetName: "MicIcon", label: "Record") {
                                 onMicPress?()
                             }
                         }
@@ -67,11 +67,14 @@ struct MessageComposer: View {
 
                     Spacer()
 
-                    // Right: Send button — Lucide send icon in circle
+                    // Right: Send button — Phosphor paper-plane in circle
                     Button(action: handleSend) {
                         let sendColor = theme.isDark ? Color.white : Color(hex: 0x3F3F46)
-                        LucideSendIcon()
-                            .fill(sendColor, style: FillStyle(eoFill: true))
+                        Image("SendIcon", bundle: .module)
+                            .resizable()
+                            .renderingMode(.template)
+                            .aspectRatio(contentMode: .fit)
+                            .foregroundColor(sendColor)
                             .frame(width: 18, height: 18)
                             .frame(width: 38, height: 38)
                             .background(theme.sendBtnBg)
@@ -97,11 +100,14 @@ struct MessageComposer: View {
     // MARK: - Helpers
 
     @ViewBuilder
-    private func composerButton(icon: Image, label: String, action: @escaping () -> Void) -> some View {
+    private func composerButton(assetName: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            icon
-                .font(.system(size: 22))
+            Image(assetName, bundle: .module)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
                 .foregroundColor(iconColor)
+                .frame(width: 22, height: 22)
                 .frame(width: 36, height: 36)
         }
     }
