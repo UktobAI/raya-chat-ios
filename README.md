@@ -51,8 +51,8 @@ Select **RayaChatUI** (includes Core) for packaged UI, or **RayaChatCore** for h
 ### CocoaPods
 
 ```ruby
-pod 'RayaChatUI', '~> 0.1.0'     # Packaged UI (pulls in RayaChatCore automatically)
-pod 'RayaChatCore', '~> 0.1.0'   # Headless only
+pod 'RayaChatUI', '~> 0.1.1'     # Packaged UI (pulls in RayaChatCore automatically)
+pod 'RayaChatCore', '~> 0.1.1'   # Headless only
 ```
 
 ---
