@@ -238,12 +238,12 @@ onSessionStart: { sessionId in
 
 ### `onSessionEnd(_ sessionId: String, _ messages: [TypeMessage])`
 
-Fires when the session ends. Receives the session ID and **complete message history** captured before state is cleared. This fires regardless of how the session ends:
+Fires when `client.endSession()` is called — receives the session ID and **complete message history** captured before state is cleared. The packaged UI calls `endSession()` for you in these flows:
 
 - User confirms "End Session" in the modal
-- Server sends `feedback_received` -> countdown finishes -> session ends
-- Server sends `auto_close` (inactivity timeout)
-- Developer calls `client.endSession()` in headless mode
+- Server sends `feedback_received` → countdown finishes → packaged UI calls `endSession()`
+
+In **headless mode** you call `client.endSession()` yourself. The callback **does not fire automatically** for `auto_close` (inactivity timeout) — the SDK only sets `sessionCloseInfo` and tears down the WebSocket. Observe `client.sessionCloseInfo` and call `endSession()` if you want the callback to fire on auto-close.
 
 ```swift
 onSessionEnd: { sessionId, messages in
@@ -598,7 +598,7 @@ end_session -> user picks Yes/No
 
 ## Exporting Session Data (onSessionEnd)
 
-The `onSessionEnd` callback receives the session ID and full message history, captured before state is cleared. This works in all modes and fires regardless of how the session ends.
+The `onSessionEnd` callback receives the session ID and full message history, captured before state is cleared. It fires whenever `client.endSession()` is called — by the user via the packaged UI's End Session modal, by the packaged UI after a `feedback_received` countdown, or by your own headless code. It does **not** auto-fire on `auto_close`; see the callback reference for that case.
 
 ### Packaged UI example
 
@@ -669,7 +669,7 @@ The `onMessageUpdate` callback fires after every message send/receive with the i
 | Bot responds | Yes (immediately) | Bot's message (sender=2, type=1) |
 | User sends images | Yes (after server returns S3 URLs) | User's image message with remote URLs (sender=1, type=3) |
 | User sends audio | Yes (after server returns S3 URL) | User's audio message with remote URL (sender=1, type=2) |
-| System message (agent joined) | Yes (immediately) | System message (sender=2, type=4) |
+| System / agent activity (e.g., "Agent joined") | Yes (immediately) | Activity message (sender=2, type=4) |
 | Bot thinking (STEP/CHUNK) | No | -- |
 | Presets/commands | No | -- |
 | Session end | No | Use `onSessionEnd` instead |
@@ -689,7 +689,7 @@ RayaChatView(
                 "session_id": sessionId,
                 "customer_id": customerId,
                 "message_id": message.id,
-                "sender": message.sender == 1 ? "user" : (message.sender == 2 ? "bot" : "system"),
+                "sender": message.sender == 1 ? "user" : "agent",  // 1 = human user, 2 = AI/human agent (incl. system activity)
                 "type": message.type == 1 ? "text" : (message.type == 2 ? "audio" : (message.type == 3 ? "image" : "system")),
                 "content": message.content ?? "",
                 "attachments": message.attachmentsJson ?? "",
@@ -713,7 +713,7 @@ RayaChatView(
 3. SDK sends images to server via WebSocket
 4. Server processes and returns RESPONSE with S3 URLs
 5. SDK updates user's message with remote URLs
-6. onMessageUpdate fires with: sender=1, type=3, attachmentsJson=[{url:"https://s3..."}]
+6. onMessageUpdate fires with: sender=1, type=3, attachmentsJson=[{id:"local-att-1712678420-0", url:"https://s3...", type:"image", name:"IMG_0001.JPG"}, ...]
 7. onMessageUpdate fires with bot's reply: sender=2, type=1, content="I see your images..."
 ```
 
@@ -749,9 +749,9 @@ See [TypeMessage Schema](#typemessage-schema) for the full message object struct
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `String` | Unique message ID. User messages: `"local-1712678410-a1b2c3d4"`. Bot messages: `"resp-uuid"`. System: `"system-timestamp"`. |
-| `sender` | `Int` | Who sent it: `1` = user, `2` = bot/agent, `0` = system |
-| `type` | `Int` | Message type: `1` = text, `2` = audio, `3` = image, `4` = system/agent_activity |
+| `id` | `String` | Unique message ID. User messages: `"local-1712678410-a1b2c3d4"`. Bot/agent responses: `"resp-uuid"`. Agent-activity messages: a generated UUID. |
+| `sender` | `Int` | Who sent it: `1` = human user (the person using the app), `2` = AI agent / human agent / system agent_activity. The SDK never emits `sender=0`. |
+| `type` | `Int` | Message type: `1` = text, `2` = audio, `3` = image, `4` = agent_activity (system messages like "Agent joined"). Use `type==4` to distinguish system activity from regular bot text. |
 | `content` | `String?` | Message text. May contain markdown for bot messages. Image caption for image messages. `nil` for audio-only messages. |
 | `createdAt` | `String?` | Unix timestamp in **seconds** (e.g., `"1712678410"`). Stored as String. |
 | `attachmentsJson` | `String?` | JSON string containing a list of image attachments. `nil` for non-image messages. See [Attachment Schema](#attachment-schema) below. |
@@ -793,7 +793,7 @@ See [TypeMessage Schema](#typemessage-schema) for the full message object struct
     "type": 3,
     "content": "Here's a photo of the issue",
     "createdAt": "1712678420",
-    "attachmentsJson": "[{\"id\":\"\",\"url\":\"https://s3.amazonaws.com/bucket/image1.jpg\",\"type\":\"image\",\"name\":\"\"},{\"id\":\"\",\"url\":\"https://s3.amazonaws.com/bucket/image2.jpg\",\"type\":\"image\",\"name\":\"\"}]",
+    "attachmentsJson": "[{\"id\":\"local-att-1712678420-0\",\"url\":\"https://s3.amazonaws.com/bucket/image1.jpg\",\"type\":\"image\",\"name\":\"IMG_0001.JPG\"},{\"id\":\"local-att-1712678420-1\",\"url\":\"https://s3.amazonaws.com/bucket/image2.jpg\",\"type\":\"image\",\"name\":\"IMG_0002.JPG\"}]",
     "audioJson": null
 }
 ```
@@ -811,11 +811,11 @@ See [TypeMessage Schema](#typemessage-schema) for the full message object struct
 }
 ```
 
-**System message (agent activity):**
+**Agent-activity message (system "Agent joined"):**
 ```json
 {
-    "id": "system-1712678440",
-    "sender": 0,
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "sender": 2,
     "type": 4,
     "content": "Agent joined the conversation",
     "createdAt": "1712678440",
@@ -823,6 +823,7 @@ See [TypeMessage Schema](#typemessage-schema) for the full message object struct
     "audioJson": null
 }
 ```
+> Note: `sender=2` here, same as a regular bot reply. Use `type==4` to detect system/activity messages.
 
 ### Attachment Schema
 
@@ -847,16 +848,16 @@ Each `Attachment` object:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `String` | Attachment ID (empty string for server-returned URLs) |
+| `id` | `String` | Client-side attachment ID assigned at send time (e.g., `"local-att-1712678420-0"`). Preserved through the local→remote URL swap so backends can dedup. |
 | `url` | `String` | Remote image URL — e.g., `"https://s3.amazonaws.com/bucket/image1.jpg"` |
 | `type` | `String` | Always `"image"` |
-| `name` | `String` | Filename (may be empty) |
+| `name` | `String` | Original filename from the picker (e.g., `"IMG_0001.JPG"`). Preserved through the local→remote URL swap. |
 
 Example parsed:
 ```json
 [
-    {"id": "", "url": "https://s3.amazonaws.com/bucket/image1.jpg", "type": "image", "name": ""},
-    {"id": "", "url": "https://s3.amazonaws.com/bucket/image2.jpg", "type": "image", "name": ""}
+    {"id": "local-att-1712678420-0", "url": "https://s3.amazonaws.com/bucket/image1.jpg", "type": "image", "name": "IMG_0001.JPG"},
+    {"id": "local-att-1712678420-1", "url": "https://s3.amazonaws.com/bucket/image2.jpg", "type": "image", "name": "IMG_0002.JPG"}
 ]
 ```
 
@@ -895,7 +896,7 @@ Example parsed:
 - **All URLs are remote server URLs, never local paths.** `attachmentsJson` and `audioJson` in `onSessionEnd` and `onMessageUpdate` callbacks always contain permanent S3/CDN URLs that can be stored in your database or accessed from any device.
 - **`content` may contain markdown** for bot messages (bold, italic, code, links). Parse or render accordingly if storing in your system.
 - **`createdAt` is seconds, not milliseconds.** Multiply by 1000 if you need a JavaScript `Date` or Swift `Date(timeIntervalSince1970:)` already takes seconds.
-- **`sender` values:** `1` = user, `2` = bot/AI agent/human agent, `0` = system. There is no distinction between AI and human agent at the message level — both are `sender=2`.
+- **`sender` values:** `1` = human user (the person using the app), `2` = everyone else — AI agent, human agent, and system "agent_activity" messages all share `sender=2`. The SDK never emits `sender=0`. To distinguish a system/activity message from a regular bot reply, check `type==4` (agent_activity) vs `type==1` (text).
 
 ---
 
