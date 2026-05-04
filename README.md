@@ -1080,6 +1080,24 @@ Keep the `RayaChatView` mounted in the view hierarchy. See [Keeping Chat Alive A
 
 All callbacks (`onSessionStart`, `onSessionEnd`, `onError`, `onClose`) must be passed in the `RayaChatViewController` constructor. They cannot be set as properties after init.
 
+### CocoaPods build error: "Sandbox: rsync(...) deny" (Xcode 15+)
+
+If `pod install` succeeds but the first build fails with errors like:
+
+```
+error: Sandbox: rsync(...) deny(1) file-write-create .../Frameworks/RayaChatCore.framework/_CodeSignature
+```
+
+This is an Xcode 15+ default that blocks CocoaPods' framework-embed step — not an SDK issue. Fix it once in your Xcode target:
+
+1. Select the project in the file navigator → pick your **app target** (not the project)
+2. Go to **Build Settings** → click **All** (the Basic tab hides this setting)
+3. Search for `User Script Sandboxing`
+4. Set the value to **No**
+5. ⌘R
+
+The setting only affects your app, not the SDK. Tracked upstream at [CocoaPods/CocoaPods#12012](https://github.com/CocoaPods/CocoaPods/issues/12012).
+
 ## License
 
 MIT
