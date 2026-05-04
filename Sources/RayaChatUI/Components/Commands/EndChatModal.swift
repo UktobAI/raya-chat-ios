@@ -25,7 +25,7 @@ struct EndChatModal: View {
                         .fill(theme.muted)
                         .frame(width: 75, height: 75)
                     let iconColor = theme.isDark ? Color(hex: 0xA1A1AA) : Color(hex: 0x71717A)
-                    Image("MessageSquareXIcon", bundle: .module)
+                    Image("MessageSquareXIcon", bundle: .rayaChatUI)
                         .resizable()
                         .renderingMode(.template)
                         .aspectRatio(contentMode: .fit)

@@ -124,7 +124,7 @@ struct IntroScreen: View {
                                 Text(RayaStrings.get("start_chat", locale: locale))
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(theme.gradientForeground)
-                                Image("SendIcon", bundle: .module)
+                                Image("SendIcon", bundle: .rayaChatUI)
                                     .resizable()
                                     .renderingMode(.template)
                                     .foregroundColor(theme.gradientForeground)

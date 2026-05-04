@@ -70,7 +70,7 @@ struct MessageComposer: View {
                     // Right: Send button — Phosphor paper-plane in circle
                     Button(action: handleSend) {
                         let sendColor = theme.isDark ? Color.white : Color(hex: 0x3F3F46)
-                        Image("SendIcon", bundle: .module)
+                        Image("SendIcon", bundle: .rayaChatUI)
                             .resizable()
                             .renderingMode(.template)
                             .aspectRatio(contentMode: .fit)
@@ -102,7 +102,7 @@ struct MessageComposer: View {
     @ViewBuilder
     private func composerButton(assetName: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(assetName, bundle: .module)
+            Image(assetName, bundle: .rayaChatUI)
                 .resizable()
                 .renderingMode(.template)
                 .aspectRatio(contentMode: .fit)
