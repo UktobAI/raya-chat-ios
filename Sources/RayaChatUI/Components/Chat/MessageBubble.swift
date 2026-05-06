@@ -33,6 +33,9 @@ struct MessageBubble: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+        } else if message.type == 2, let audio = message.audio, !audio.audioUrls.isEmpty {
+            // Audio message
+            audioMessageRow(uri: audio.audioUrls, isUser: isUser, timestamp: timestamp, avatarUrl: avatarUrl)
         } else if hasContent || hasImages {
             // ── Normal message ──
             // Outer Column: full width, aligned to trailing (user) or leading (bot)
@@ -140,6 +143,41 @@ struct MessageBubble: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
+    // MARK: - Audio Message
+
+    @ViewBuilder
+    private func audioMessageRow(uri: String, isUser: Bool, timestamp: String, avatarUrl: String?) -> some View {
+        VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
+            HStack(alignment: .bottom, spacing: 8) {
+                if !isUser, let url = avatarUrl, let imageUrl = URL(string: url) {
+                    AsyncImage(url: imageUrl) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        Circle().fill(theme.botBubble)
+                    }
+                    .frame(width: 28, height: 28)
+                    .clipShape(Circle())
+                }
+                AudioMessageBubble(uri: uri, isUser: isUser)
+                    .frame(maxWidth: 260)
+                if isUser { Spacer(minLength: 0) }
+            }
+            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+
+            if !timestamp.isEmpty {
+                Text(timestamp)
+                    .font(.system(size: 10))
+                    .foregroundColor(theme.mutedForeground)
+                    .padding(.top, 8)
+                    .padding(.leading, (!isUser && avatarUrl != nil) ? 36 : 0)
+            }
+
+            Color.clear.frame(height: 20)
+        }
+        .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+        .padding(.horizontal, 12)
+    }
+
     // MARK: - Bot Image Grid
 
     @ViewBuilder
@@ -163,4 +201,23 @@ struct MessageBubble: View {
 
 extension String {
     var asInt64: Int64? { Int64(self) }
+}
+
+/// Wrapper that owns one audio player adapter per audio message bubble, so
+/// scrolling between audio messages doesn't share a single player's state.
+private struct AudioMessageBubble: View {
+    let uri: String
+    let isUser: Bool
+
+    #if canImport(AVFAudio) && os(iOS)
+    @State private var adapter: DefaultAudioPlayerAdapter = .init()
+    #endif
+
+    var body: some View {
+        #if canImport(AVFAudio) && os(iOS)
+        AudioPlayerUI(uri: uri, adapter: adapter)
+        #else
+        EmptyView()
+        #endif
+    }
 }

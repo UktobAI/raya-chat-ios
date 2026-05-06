@@ -16,7 +16,8 @@ public struct RayaChatView: View {
     ///   - token: Bot token from the Teammates.ai dashboard.
     ///   - locale: Language — `"en"` (English) or `"ar"` (Arabic/RTL). Default: `"en"`.
     ///   - imagePickerAdapter: Adapter for image selection. Built-in PHPicker used if omitted. Pass nil to hide.
-    ///   - audioRecorderAdapter: Adapter for voice recording. Mic button hidden if nil.
+    ///   - audioRecorderAdapter: Adapter for voice recording. Built-in AVAudioRecorder used if omitted (when `NSMicrophoneUsageDescription` is present in Info.plist). Mic button hidden if nil and key is missing.
+    ///   - audioPlayerAdapter: Adapter for audio playback. Built-in AVAudioPlayer used if omitted.
     ///   - onSessionStart: Called with session ID when WebSocket connects.
     ///   - onSessionEnd: Called when session ends — passes (sessionId, messages) with remote attachment URLs.
     ///   - onError: Called on connection/send errors.
@@ -26,6 +27,7 @@ public struct RayaChatView: View {
         locale: String = "en",
         imagePickerAdapter: (any ImagePickerAdapter)? = nil,
         audioRecorderAdapter: (any AudioRecorderAdapter)? = nil,
+        audioPlayerAdapter: (any AudioPlayerAdapter)? = nil,
         onSessionStart: ((String) -> Void)? = nil,
         onSessionEnd: ((String, [TypeMessage]) -> Void)? = nil,
         onMessageUpdate: ((String, TypeMessage) -> Void)? = nil,
@@ -48,13 +50,24 @@ public struct RayaChatView: View {
         #else
         self.imagePickerAdapter = imagePickerAdapter
         #endif
+        // Audio recorder: developer-provided wins. Otherwise, auto-instantiate the
+        // AVFoundation default — but only if the host app declared
+        // NSMicrophoneUsageDescription. If absent, leave nil so the mic button
+        // stays hidden and the app cannot crash.
+        #if canImport(AVFAudio) && os(iOS)
+        self.audioRecorderAdapter = audioRecorderAdapter ?? DefaultAudioRecorderAdapter.makeIfAvailable()
+        self.audioPlayerAdapter = audioPlayerAdapter ?? DefaultAudioPlayerAdapter.make()
+        #else
         self.audioRecorderAdapter = audioRecorderAdapter
+        self.audioPlayerAdapter = audioPlayerAdapter
+        #endif
     }
 
     @StateObject private var viewModel: RayaChatViewModel
     private let locale: String
     private let imagePickerAdapter: (any ImagePickerAdapter)?
     private let audioRecorderAdapter: (any AudioRecorderAdapter)?
+    private let audioPlayerAdapter: (any AudioPlayerAdapter)?
 
     public var body: some View {
         // Theme is value type — only recalculated when botConfig or locale changes
@@ -90,6 +103,7 @@ public struct RayaChatView: View {
                             botConfig: viewModel.botConfig,
                             imagePickerAdapter: imagePickerAdapter,
                             audioRecorderAdapter: audioRecorderAdapter,
+                            audioPlayerAdapter: audioPlayerAdapter,
                             onClose: { viewModel.closeChat() },
                             onEndSession: { viewModel.endSessionFromCommand() }
                         )

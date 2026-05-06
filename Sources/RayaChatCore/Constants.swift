@@ -26,6 +26,11 @@ public enum Constants {
     public static let maxFeedbackLength = 200
     public static let feedbackCountdownSeconds = 3
 
+    // Audio
+    public static let maxAudioDurationSeconds = 300            // 5 min hard cap
+    public static let maxAudioPayloadBytes = 5 * 1024 * 1024   // 5 MB — matches WS maxMessageSize
+    public static let minAudioPayloadBytes = 1024              // <1KB rejected as empty/silent
+
     // Storage keys
     public static let sessionIdKey = "raya-chat-session-id"
     public static let userInfoKey = "raya-chat-user"

@@ -7,10 +7,12 @@ struct ChatScreen: View {
     let botConfig: BotConfigProps
     var imagePickerAdapter: (any ImagePickerAdapter)?
     var audioRecorderAdapter: (any AudioRecorderAdapter)?
+    var audioPlayerAdapter: (any AudioPlayerAdapter)?
     var onClose: () -> Void
     var onEndSession: () -> Void
 
     @State private var fullScreenImage: String?
+    @State private var showAudioRecorder: Bool = false
     @Environment(\.rayaTheme) private var theme
 
     var body: some View {
@@ -58,19 +60,36 @@ struct ChatScreen: View {
                     footerChangeSignal: footerSignal
                 )
 
-                // Composer
-                MessageComposer(
-                    placeholder: client.commandData != nil ? RayaStrings.get("select_option", locale: locale) : botConfig.chatboxPlaceholder,
-                    enableImageUpload: botConfig.enableImageUpload,
-                    enableVoiceNote: botConfig.enableVoiceNote,
-                    imagePickerAdapter: imagePickerAdapter,
-                    hasAudioAdapter: audioRecorderAdapter != nil,
-                    disabled: client.commandData != nil || (client.loading && client.currentMessage.isEmpty),
-                    locale: locale,
-                    onSendMessage: { client.sendMessage($0) },
-                    onSendImages: { images, caption in client.sendImages(images, caption: caption) },
-                    onMicPress: nil // TODO: audio recorder overlay
-                )
+                // Composer or audio recorder overlay
+                if showAudioRecorder, let adapter = audioRecorderAdapter {
+                    AudioRecorderUI(
+                        adapter: adapter,
+                        onComplete: { result in
+                            if let base64 = result.base64, !base64.isEmpty {
+                                client.sendAudio(base64)
+                            }
+                            showAudioRecorder = false
+                        },
+                        onCancel: {
+                            showAudioRecorder = false
+                        }
+                    )
+                    .padding(.vertical, 8)
+                    .background(theme.background)
+                } else {
+                    MessageComposer(
+                        placeholder: client.commandData != nil ? RayaStrings.get("select_option", locale: locale) : botConfig.chatboxPlaceholder,
+                        enableImageUpload: botConfig.enableImageUpload,
+                        enableVoiceNote: botConfig.enableVoiceNote,
+                        imagePickerAdapter: imagePickerAdapter,
+                        hasAudioAdapter: audioRecorderAdapter != nil,
+                        disabled: client.commandData != nil || (client.loading && client.currentMessage.isEmpty),
+                        locale: locale,
+                        onSendMessage: { client.sendMessage($0) },
+                        onSendImages: { images, caption in client.sendImages(images, caption: caption) },
+                        onMicPress: { showAudioRecorder = true }
+                    )
+                }
             }
             .background(theme.background)
             .background(alignment: .top) {
