@@ -159,7 +159,7 @@ struct MessageBubble: View {
                     .clipShape(Circle())
                 }
                 AudioMessageBubble(uri: uri, isUser: isUser)
-                    .frame(maxWidth: 260)
+                    .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
                 if isUser { Spacer(minLength: 0) }
             }
             .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)

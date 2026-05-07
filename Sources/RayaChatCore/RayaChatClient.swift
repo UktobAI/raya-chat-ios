@@ -180,12 +180,30 @@ public final class RayaChatClient: ObservableObject {
         }
     }
 
-    /// Sends a voice note as base64.
+    /// Sends a voice note. Accepts either raw base64 or a `data:audio/...;base64,...` URI.
+    /// Stores the data URI in the local message so the chat bubble can play it back
+    /// before the server returns a remote S3 URL. Sends raw audio bytes as a binary
+    /// WebSocket frame — the server routes binary frames to OpenAI, while text frames
+    /// are parsed as JSON commands.
     @MainActor
     public func sendAudio(_ base64: String) {
         let ts = Int(Date().timeIntervalSince1970)
         presets = []
-        let audioData = AudioData(type: "local", audioUrls: base64)
+
+        // Normalize: extract raw base64 (for decoding to bytes) and a data URI
+        // (for the local message bubble's playback).
+        let raw: String
+        let dataUri: String
+        if base64.hasPrefix("data:"),
+           let commaIdx = base64.firstIndex(of: ",") {
+            raw = String(base64[base64.index(after: commaIdx)...])
+            dataUri = base64
+        } else {
+            raw = base64
+            dataUri = "data:audio/wav;base64,\(base64)"
+        }
+
+        let audioData = AudioData(type: "local", audioUrls: dataUri)
         let audioJson = (try? String(data: json.encode(audioData), encoding: .utf8)) ?? "{}"
 
         let msg = TypeMessage(
@@ -200,7 +218,13 @@ public final class RayaChatClient: ObservableObject {
         pendingAttachmentMessageIds.insert(msg.id) // Defer onMessageUpdate until remote URL arrives
         addMessageToState(msg)
 
-        let sent = wsManager?.send(base64) ?? false
+        // Decode base64 → raw bytes → send as binary WebSocket frame
+        guard let bytes = Data(base64Encoded: raw) else {
+            Log.e("Client", "sendAudio: failed to decode base64 to bytes")
+            config.onError?("Audio could not be encoded for upload.")
+            return
+        }
+        let sent = wsManager?.sendBinary(bytes) ?? false
         if !sent {
             config.onError?("Audio queued — reconnecting...")
         }

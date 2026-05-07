@@ -104,13 +104,21 @@ final class MessageHandler {
             createdAt: ts
         )
 
-        // Handle attachments FIRST (matches Android order — user image gets remote URLs before bot message fires)
+        // Handle attachments FIRST (matches Android/RN order — user image/audio gets remote URLs before bot message fires)
         let atts = responseData.attachments ?? msg.attachments
         let attType = responseData.attachmentType ?? msg.attachmentType ?? "image"
         Log.d("Protocol", "RESPONSE attachments: \(atts?.description ?? "nil"), type: \(attType)")
         if let attachments = atts, !attachments.isEmpty {
             Log.i("Protocol", "Dispatching onAttachments: \(attachments.count) \(attType) URLs: \(attachments)")
             delegate?.onAttachments(attachments: attachments, type: attType)
+        }
+
+        // Audio URLs come back as a top-level `audio_urls` string (separate from image attachments).
+        // Route through the same onAttachments path with type="audio" so the user's voice-note
+        // message gets its remote URL substituted and the deferred onMessageUpdate fires.
+        if let audioUrl = responseData.audioUrls, !audioUrl.isEmpty {
+            Log.i("Protocol", "Dispatching onAttachments: audio URL \(audioUrl)")
+            delegate?.onAttachments(attachments: [audioUrl], type: "audio")
         }
 
         // Then add bot response message

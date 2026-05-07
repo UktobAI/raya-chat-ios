@@ -27,9 +27,9 @@ public enum Constants {
     public static let feedbackCountdownSeconds = 3
 
     // Audio
-    public static let maxAudioDurationSeconds = 300            // 5 min hard cap
-    public static let maxAudioPayloadBytes = 5 * 1024 * 1024   // 5 MB — matches WS maxMessageSize
-    public static let minAudioPayloadBytes = 1024              // <1KB rejected as empty/silent
+    public static let maxAudioDurationSeconds = 180            // 3 min hard cap (WAV is ~10x bigger than AAC)
+    public static let maxAudioPayloadBytes = 10 * 1024 * 1024  // 10 MB — fits 3 min WAV PCM 16k mono base64
+    public static let minAudioPayloadBytes = 4096              // <4KB rejected (under ~125ms — Whisper would discard anyway)
 
     // Storage keys
     public static let sessionIdKey = "raya-chat-session-id"

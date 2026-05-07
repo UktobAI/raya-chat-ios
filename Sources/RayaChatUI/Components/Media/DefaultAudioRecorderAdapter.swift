@@ -94,15 +94,18 @@ public final class DefaultAudioRecorderAdapter: NSObject, AudioRecorderAdapter, 
         }
 
         let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        let url = cachesDir.appendingPathComponent("raya-recording-\(UUID().uuidString).m4a")
+        let url = cachesDir.appendingPathComponent("raya-recording-\(UUID().uuidString).wav")
         self.fileURL = url
 
+        // WAV PCM 16kHz mono 16-bit — Whisper-native sample rate, accepted by OpenAI Responses API.
+        // M4A AAC isn't accepted by Responses API audio input (only `wav` and `mp3`).
         let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44_100,
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 16_000,
             AVNumberOfChannelsKey: 1,
-            AVEncoderBitRateKey: 64_000,
-            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey: false,
         ]
 
         do {
@@ -156,8 +159,19 @@ public final class DefaultAudioRecorderAdapter: NSObject, AudioRecorderAdapter, 
             throw AudioRecorderError.fileTooLarge
         }
 
-        let dataUri = "data:audio/mp4;base64,\(data.base64EncodedString())"
-        let result = AudioResult(uri: fileURL.absoluteString, base64: dataUri)
+        // Match the RN SDK: send RAW base64 over the WebSocket (no `data:` prefix).
+        // Stash the full data URI in `uri` so the preview/player adapter can still
+        // load it back for playback after the temp file is deleted below.
+        let rawBase64 = data.base64EncodedString()
+        let dataUri = "data:audio/wav;base64,\(rawBase64)"
+        let result = AudioResult(uri: dataUri, base64: rawBase64)
+
+        // Diagnostic — valid WAV starts with "RIFF....WAVE"
+        let firstBytes = data.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ")
+        let header = String(data: data.prefix(4), encoding: .ascii) ?? "(non-ascii)"
+        print("[RayaChat.Audio] recorded \(data.count) bytes WAV, base64 \(rawBase64.count) chars")
+        print("[RayaChat.Audio] header: \(header) (expected 'RIFF')")
+        print("[RayaChat.Audio] first 16 bytes (hex): \(firstBytes)")
 
         try? FileManager.default.removeItem(at: fileURL)
         self.fileURL = nil
@@ -182,10 +196,17 @@ public final class DefaultAudioRecorderAdapter: NSObject, AudioRecorderAdapter, 
     public func getAmplitude() async -> Float {
         guard let recorder, recorder.isRecording else { return 0 }
         recorder.updateMeters()
-        let db = recorder.averagePower(forChannel: 0)
-        // Convert dB (-160 to 0) to 0..1 normalized linear amplitude
-        let normalized = pow(10, db / 20)
-        return Float(min(max(normalized, 0), 1))
+        // Use peak power for burst-aware visualization (matches web Web Audio API behavior).
+        let peak = recorder.peakPower(forChannel: 0)
+        let avg = recorder.averagePower(forChannel: 0)
+        // Combine: peak with small headroom, fall back to average if peak is silent.
+        let db = max(avg, peak - 3)
+
+        // Linear-in-dB mapping with a -50 dB noise floor — speech at -20 dB → ~0.6.
+        // pow(10, db/20) gives 0.001 for -60dB, which clamps to 0pt bars. Wrong visual.
+        let minDb: Float = -50
+        let normalized = max(0, (db - minDb) / -minDb)
+        return min(1, normalized)
     }
 
     public func cleanup() async {
@@ -245,12 +266,12 @@ public final class DefaultAudioRecorderAdapter: NSObject, AudioRecorderAdapter, 
         recorder?.stop()
     }
 
-    /// Removes any leftover .m4a files from previous sessions in the caches directory.
-    /// Defends against accumulated disk usage if the app was force-killed mid-recording.
+    /// Removes any leftover recording files (.wav or .m4a from older versions) in the
+    /// caches directory. Defends against accumulated disk usage if the app was force-killed.
     private func purgeOrphanedRecordings() {
         let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         guard let entries = try? FileManager.default.contentsOfDirectory(atPath: cachesDir.path) else { return }
-        for entry in entries where entry.hasPrefix("raya-recording-") && entry.hasSuffix(".m4a") {
+        for entry in entries where entry.hasPrefix("raya-recording-") && (entry.hasSuffix(".wav") || entry.hasSuffix(".m4a")) {
             try? FileManager.default.removeItem(at: cachesDir.appendingPathComponent(entry))
         }
     }

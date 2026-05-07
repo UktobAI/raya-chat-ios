@@ -133,5 +133,49 @@ public final class DefaultAudioPlayerAdapter: NSObject, AudioPlayerAdapter, @unc
         }
         AudioSessionCoordinator.shared.exit()
     }
+
+    /// Reads the cached audio file and returns peak amplitudes (0..1) per time-bucket.
+    /// Reads in chunks so memory stays bounded even for long recordings.
+    public func getAmplitudes(sampleCount: Int) async -> [Float]? {
+        guard let url = cachedFileURL, sampleCount > 0 else { return nil }
+        guard let file = try? AVAudioFile(forReading: url) else { return nil }
+        let totalFrames = file.length
+        guard totalFrames > 0 else { return [] }
+
+        let bucketFrames = AVAudioFramePosition(totalFrames) / AVAudioFramePosition(sampleCount)
+        guard bucketFrames > 0 else { return nil }
+
+        let format = file.processingFormat
+        let chunkCapacity = AVAudioFrameCount(bucketFrames)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkCapacity) else {
+            return nil
+        }
+
+        var amplitudes: [Float] = []
+        amplitudes.reserveCapacity(sampleCount)
+
+        for i in 0..<sampleCount {
+            let startFrame = AVAudioFramePosition(i) * bucketFrames
+            file.framePosition = startFrame
+            do {
+                try file.read(into: buffer, frameCount: chunkCapacity)
+            } catch {
+                amplitudes.append(0)
+                continue
+            }
+            guard let channelData = buffer.floatChannelData?[0] else {
+                amplitudes.append(0)
+                continue
+            }
+            let frameLength = Int(buffer.frameLength)
+            var maxAmp: Float = 0
+            for j in 0..<frameLength {
+                let a = abs(channelData[j])
+                if a > maxAmp { maxAmp = a }
+            }
+            amplitudes.append(min(1, maxAmp))
+        }
+        return amplitudes
+    }
 }
 #endif

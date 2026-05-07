@@ -72,6 +72,7 @@ public struct ChatResponseData: Codable, Sendable {
     public let createdAt: String? // Stored as string, decoded from either string or number
     public let attachments: [String]?
     public let attachmentType: String?
+    public let audioUrls: String? // Remote S3 URL for the user's voice note, returned after upload
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -80,6 +81,7 @@ public struct ChatResponseData: Codable, Sendable {
         case createdAt = "created_at"
         case attachments
         case attachmentType = "attachment_type"
+        case audioUrls = "audio_urls"
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,6 +92,7 @@ public struct ChatResponseData: Codable, Sendable {
         content = try container.decodeIfPresent(String.self, forKey: .content)
         attachments = try? container.decodeIfPresent([String].self, forKey: .attachments)
         attachmentType = try? container.decodeIfPresent(String.self, forKey: .attachmentType)
+        audioUrls = try? container.decodeIfPresent(String.self, forKey: .audioUrls)
 
         // created_at: server sends as Long (number) — Android uses Long, we convert to String
         if let intValue = try? container.decodeIfPresent(Int64.self, forKey: .createdAt) {

@@ -12,8 +12,15 @@ struct ChatScreen: View {
     var onEndSession: () -> Void
 
     @State private var fullScreenImage: String?
-    @State private var showAudioRecorder: Bool = false
+    @State private var audioFlow: AudioFlow = .none
     @Environment(\.rayaTheme) private var theme
+
+    /// Three-state flow for the audio composer area: idle → recording → preview → send/cancel.
+    private enum AudioFlow {
+        case none
+        case recording
+        case preview(AudioResult, [Float])
+    }
 
     var body: some View {
         let locale = theme.locale
@@ -60,23 +67,44 @@ struct ChatScreen: View {
                     footerChangeSignal: footerSignal
                 )
 
-                // Composer or audio recorder overlay
-                if showAudioRecorder, let adapter = audioRecorderAdapter {
-                    AudioRecorderUI(
-                        adapter: adapter,
-                        onComplete: { result in
+                // Composer / recorder / preview — three-state machine
+                switch audioFlow {
+                case .recording:
+                    if let adapter = audioRecorderAdapter {
+                        AudioRecorderUI(
+                            adapter: adapter,
+                            onComplete: { result, amps in
+                                audioFlow = .preview(result, amps)
+                            },
+                            onCancel: {
+                                audioFlow = .none
+                            }
+                        )
+                        .padding(.vertical, 8)
+                        .background(theme.background)
+                    } else {
+                        // Defensive: should never reach .recording without an adapter
+                        Color.clear.onAppear { audioFlow = .none }
+                    }
+
+                case .preview(let result, let amps):
+                    AudioPreviewUI(
+                        audioResult: result,
+                        amplitudes: amps,
+                        onSend: {
                             if let base64 = result.base64, !base64.isEmpty {
                                 client.sendAudio(base64)
                             }
-                            showAudioRecorder = false
+                            audioFlow = .none
                         },
                         onCancel: {
-                            showAudioRecorder = false
+                            audioFlow = .none
                         }
                     )
                     .padding(.vertical, 8)
                     .background(theme.background)
-                } else {
+
+                case .none:
                     MessageComposer(
                         placeholder: client.commandData != nil ? RayaStrings.get("select_option", locale: locale) : botConfig.chatboxPlaceholder,
                         enableImageUpload: botConfig.enableImageUpload,
@@ -87,7 +115,7 @@ struct ChatScreen: View {
                         locale: locale,
                         onSendMessage: { client.sendMessage($0) },
                         onSendImages: { images, caption in client.sendImages(images, caption: caption) },
-                        onMicPress: { showAudioRecorder = true }
+                        onMicPress: { audioFlow = .recording }
                     )
                 }
             }

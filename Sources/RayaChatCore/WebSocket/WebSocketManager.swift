@@ -133,6 +133,32 @@ final class WebSocketManager: @unchecked Sendable {
         return false
     }
 
+    /// Send raw binary data as a WebSocket binary frame. Used for audio uploads —
+    /// the server routes binary frames straight to OpenAI; text frames are parsed
+    /// as JSON commands and would be silently dropped.
+    func sendBinary(_ data: Data) -> Bool {
+        guard !destroyed else { return false }
+
+        Log.d("WS", "→ SEND BINARY (\(data.count) bytes)")
+
+        sendLock.lock()
+        let status = _status.value
+        let currentTask = self.task
+        sendLock.unlock()
+
+        if status == .connected, let task = currentTask {
+            task.send(.data(data)) { error in
+                if let error {
+                    Log.e("WS", "→ SEND BINARY error: \(error.localizedDescription)")
+                }
+            }
+            return true
+        }
+
+        Log.w("WS", "→ SEND BINARY failed — not connected (status: \(status))")
+        return false
+    }
+
     // MARK: - Update URL (for session ID changes)
 
     func updateUrl(_ newUrl: String) {
