@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "RayaChatCore"
-  s.version      = "0.1.1"
+  s.version      = "0.1.2"
   s.summary      = "Raya AI Chat SDK — headless engine for iOS"
   s.description  = "Headless chat engine for the Raya AI chat widget — WebSocket, reconnection, persistence, state management. Use this directly to build a fully custom UI, or pair with RayaChatUI for a drop-in widget."
   s.homepage     = "https://github.com/UktobAI/raya-chat-ios"

@@ -2,7 +2,7 @@ import Foundation
 
 /// SDK-wide constants matching the React Native SDK v0.1.0.
 public enum Constants {
-    public static let sdkVersion = "0.1.1"
+    public static let sdkVersion = "0.1.2"
     public static let defaultEndpoint = "api.workforce.uktob.ai"
     public static let integrationType = "widget"
     public static let defaultBotAvatar = "https://app.teammates.ai/api/assets/images/New_raya_agent.png"

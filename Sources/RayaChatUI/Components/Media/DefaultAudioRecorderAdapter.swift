@@ -159,19 +159,12 @@ public final class DefaultAudioRecorderAdapter: NSObject, AudioRecorderAdapter, 
             throw AudioRecorderError.fileTooLarge
         }
 
-        // Match the RN SDK: send RAW base64 over the WebSocket (no `data:` prefix).
-        // Stash the full data URI in `uri` so the preview/player adapter can still
-        // load it back for playback after the temp file is deleted below.
+        // Match the RN SDK: raw bytes go to WebSocket as a binary frame.
+        // Stash the full data URI in `uri` so the preview/player adapter can load
+        // it back for playback after the temp file is deleted below.
         let rawBase64 = data.base64EncodedString()
         let dataUri = "data:audio/wav;base64,\(rawBase64)"
         let result = AudioResult(uri: dataUri, base64: rawBase64)
-
-        // Diagnostic — valid WAV starts with "RIFF....WAVE"
-        let firstBytes = data.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ")
-        let header = String(data: data.prefix(4), encoding: .ascii) ?? "(non-ascii)"
-        print("[RayaChat.Audio] recorded \(data.count) bytes WAV, base64 \(rawBase64.count) chars")
-        print("[RayaChat.Audio] header: \(header) (expected 'RIFF')")
-        print("[RayaChat.Audio] first 16 bytes (hex): \(firstBytes)")
 
         try? FileManager.default.removeItem(at: fileURL)
         self.fileURL = nil

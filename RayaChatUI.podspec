@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "RayaChatUI"
-  s.version      = "0.1.1"
+  s.version      = "0.1.2"
   s.summary      = "Raya AI Chat SDK — packaged SwiftUI/UIKit widget for iOS"
   s.description  = "Drop-in SwiftUI View, UIKit ViewController, and Sheet wrappers for the Raya AI chat widget. Includes the full intro/form/chat UI. Depends on RayaChatCore."
   s.homepage     = "https://github.com/UktobAI/raya-chat-ios"
@@ -13,5 +13,5 @@ Pod::Spec.new do |s|
   s.source_files     = "Sources/RayaChatUI/**/*.swift"
   s.resource_bundles = { "RayaChatUI" => ["Sources/RayaChatUI/Resources/Media.xcassets"] }
   s.frameworks       = "SwiftUI"
-  s.dependency "RayaChatCore", "= 0.1.1"
+  s.dependency "RayaChatCore", "= 0.1.2"
 end

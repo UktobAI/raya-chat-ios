@@ -51,9 +51,21 @@ Select **RayaChatUI** (includes Core) for packaged UI, or **RayaChatCore** for h
 ### CocoaPods
 
 ```ruby
-pod 'RayaChatUI', '~> 0.1.1'     # Packaged UI (pulls in RayaChatCore automatically)
-pod 'RayaChatCore', '~> 0.1.1'   # Headless only
+pod 'RayaChatUI', '~> 0.1.2'     # Packaged UI (pulls in RayaChatCore automatically)
+pod 'RayaChatCore', '~> 0.1.2'   # Headless only
 ```
+
+### Permissions (Info.plist)
+
+The SDK is **permission-free by default**. You only need to add an Info.plist key if you want voice notes:
+
+| Key | When required |
+|---|---|
+| `NSMicrophoneUsageDescription` | Only if your bot config has `enable_voice_note = true` AND you want users to record voice notes. The SDK detects the absence of this key at runtime and silently keeps the mic button hidden — no crash. Apps that don't enable voice notes never need this key. |
+
+Recommended value (Apple App Review accepts specific use cases): `"Used to record voice notes in chat support."` Customize for your app's actual use case.
+
+If you want the same image/audio behavior with no Info.plist setup, leave `enable_voice_note = false` on the bot config. The SDK uses `PHPickerViewController` for images, which **does not require any photo-library permission** because it runs out-of-process.
 
 ---
 
@@ -322,13 +334,14 @@ When you use Mode 1, 2, or 3, the SDK handles all of the following automatically
 
 ## Adapters
 
-The SDK uses **pluggable adapters** for native device features (camera, microphone). The image picker is provided automatically; audio adapters are optional.
+The SDK uses **pluggable adapters** for native device features (camera, microphone). All adapters ship with built-in defaults — provide custom ones only if you want different behavior.
 
-| Adapters provided | Buttons shown in composer |
-|-------------------|--------------------------|
-| Default (no custom adapters) | Emoji + Image + Send |
-| `imagePickerAdapter: nil` | Emoji + Send only |
-| `audioRecorderAdapter` provided | Emoji + Image + Mic + Send |
+| Bot config | Info.plist | Buttons shown in composer |
+|---|---|---|
+| `enable_image_upload = true`, `enable_voice_note = false` | (none required) | Emoji + Image + Send |
+| `enable_image_upload = true`, `enable_voice_note = true` | `NSMicrophoneUsageDescription` set | Emoji + Image + Mic + Send |
+| `enable_image_upload = true`, `enable_voice_note = true` | `NSMicrophoneUsageDescription` **missing** | Emoji + Image + Send (mic auto-hidden, no crash) |
+| `imagePickerAdapter: nil` passed explicitly | (any) | Emoji + Send only |
 
 ### ImagePickerAdapter
 
@@ -353,6 +366,10 @@ public protocol ImagePickerAdapter: AnyObject {
 
 ### AudioRecorderAdapter
 
+A built-in `DefaultAudioRecorderAdapter` using `AVAudioRecorder` is provided automatically. Records 16 kHz mono 16-bit PCM WAV (Whisper-native sample rate, accepted by OpenAI Responses API). Auto-stops at 3 minutes. Validates against the host app's `NSMicrophoneUsageDescription` Info.plist key — returns `nil` if missing, so the mic button stays hidden and the app never crashes.
+
+To provide a custom implementation:
+
 ```swift
 public protocol AudioRecorderAdapter: AnyObject {
     func startRecording() async throws
@@ -364,7 +381,11 @@ public protocol AudioRecorderAdapter: AnyObject {
 }
 ```
 
+The SDK sends raw audio bytes as a **WebSocket binary frame** (not base64-encoded text), matching the web widget's wire format. Server-side handlers route binary frames straight to OpenAI for transcription.
+
 ### AudioPlayerAdapter
+
+A built-in `DefaultAudioPlayerAdapter` using `AVAudioPlayer` handles both local data URIs (`data:audio/wav;base64,...`) and remote `https://` URLs. It also implements `getAmplitudes(sampleCount:)` to extract real waveform data from the loaded file via `AVAudioFile`, so chat bubbles show actual amplitude bars (not stylized placeholders).
 
 ```swift
 public protocol AudioPlayerAdapter: AnyObject {
@@ -374,6 +395,7 @@ public protocol AudioPlayerAdapter: AnyObject {
     func seekTo(positionMs: Int64) async throws
     func getPosition() async -> Int64
     func cleanup() async
+    func getAmplitudes(sampleCount: Int) async -> [Float]?  // optional — default returns nil
 }
 ```
 
